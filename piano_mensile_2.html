@@ -1765,8 +1765,12 @@ function renderDonut() {
     label: document.getElementById('donut-label'),
     value: document.getElementById('donut-value')
   };
+  const centerEl = document.getElementById('donut-center');
   const backBtn = document.getElementById('donut-back');
   const meta = document.getElementById('donut-meta');
+  // overlay deve essere cliccabile solo al livello dettaglio (per tornare indietro)
+  centerEl.style.pointerEvents = (donutState.level === 'voce') ? 'auto' : 'none';
+  centerEl.style.cursor = (donutState.level === 'voce') ? 'pointer' : 'default';
 
   let labels, data, colors;
 
@@ -1872,8 +1876,6 @@ document.getElementById('donut-center').addEventListener('click', () => {
     renderDonut();
   }
 });
-document.getElementById('donut-center').style.pointerEvents = 'auto';
-document.getElementById('donut-center').style.cursor = 'pointer';
 
 function renderUltimeTx() {
   const lista = document.getElementById('ultime-tx');
