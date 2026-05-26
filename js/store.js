@@ -1,40 +1,67 @@
 // ============================================================
 //  STORE — layer di persistenza offline-first
 //
-//  - Salva sempre in localStorage (avvio istantaneo + fallback senza login).
-//  - Se Firebase è configurato e l'utente è loggato, sincronizza lo stato
-//    su Firestore in un singolo documento users/{uid}/data/state.
-//  - Firestore con persistenza IndexedDB gestisce l'offline: le scritture
-//    fatte senza rete vengono messe in coda e inviate al ritorno online.
-//  - onSnapshot tiene allineati in tempo reale tutti i dispositivi.
+//  - Salva sempre in localStorage (avvio istantaneo + fallback).
+//  - Se configurato (repo GitHub privato + PAT fine-grained), sincronizza
+//    lo stato come un singolo file JSON tramite l'API Contents di GitHub.
+//  - Ogni salvataggio remoto è un commit → la cronologia git fa da backup.
+//  - Sync a polling (no real-time push): adeguata a un'app personale a
+//    utente singolo con volumi di dati modesti.
 //
-//  Modello a documento singolo (non collezioni): scelta deliberata per
-//  un'app a utente singolo con volumi di dati modesti. È atomico, semplice
-//  e privo di stati di sync parziali. Se un giorno i dati crescessero molto
-//  (decine di migliaia di movimenti) si potrà passare a collezioni; vedi
-//  la nota in SETUP.md.
+//  Schema del file remoto (tenuta-spese.json):
+//    { "stato": { ...stato app... }, "updatedAt": <ms> }
+//  updatedAt vive dentro il blob → confronto last-write-wins senza chiamate
+//  extra. Lo "sha" del file GitHub è tenuto in memoria solo come precondizione
+//  del PUT (controllo di concorrenza).
 // ============================================================
 
-import { firebaseConfig, FIREBASE_ENABLED } from './firebase-config.js';
+const LOCAL_KEY   = 'smartFinance_v1';
+const CFG_KEY     = 'smartFinance_sync_cfg';
+const UPDATED_KEY = 'smartFinance_updatedAt';
+const FILE_PATH   = 'tenuta-spese.json';
+const POLL_MS     = 30000;
+const DEBOUNCE_MS = 1500;
 
-const LOCAL_KEY = 'smartFinance_v1';
-const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
+let cfg = null;        // { repo, token }
+let sha = null;        // sha corrente del file remoto (precondizione del PUT)
+let pollTimer = null;
+let pushTimer = null;
+let pending = false;   // modifica locale non ancora confermata sul remoto
+let started = false;   // listener globali registrati una sola volta
 
-let fb = null;            // moduli + handle firebase, popolato in initFirebase()
-let unsub = null;         // funzione di unsubscribe dello snapshot
-let currentUser = null;
-let applying = false;     // guardia anti-eco (evita riscrivere ciò che arriva dal cloud)
-let seeded = false;
+const cbs = { remote: () => {}, status: () => {} };
 
-const cbs = { remote: () => {}, auth: () => {}, status: () => {} };
+// --- base64 UTF-8 (gestisce accenti, €, ecc.) ---
+function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
+function b64decode(b64) { return decodeURIComponent(escape(atob(String(b64).replace(/\n/g, '')))); }
+
+function loadCfg() {
+  try { const raw = localStorage.getItem(CFG_KEY); return raw ? JSON.parse(raw) : null; }
+  catch (e) { return null; }
+}
+function localUpdatedAt() { return Number(localStorage.getItem(UPDATED_KEY) || 0); }
+function apiUrl()  { return `https://api.github.com/repos/${cfg.repo}/contents/${FILE_PATH}`; }
+function headers() {
+  return { 'Authorization': `Bearer ${cfg.token}`, 'Accept': 'application/vnd.github+json' };
+}
 
 export const store = {
   onRemote(fn) { cbs.remote = fn; },
-  onAuth(fn)   { cbs.auth = fn; },
   onStatus(fn) { cbs.status = fn; },
 
-  isEnabled() { return FIREBASE_ENABLED; },
-  getUser()   { return currentUser; },
+  isEnabled() { return Boolean(cfg && cfg.repo && cfg.token); },
+
+  getConfig() { return cfg ? { repo: cfg.repo, token: cfg.token } : { repo: '', token: '' }; },
+  setConfig({ repo, token }) {
+    const cleanRepo = (repo || '').trim()
+      .replace(/^https?:\/\/github\.com\//, '')
+      .replace(/\.git$/, '')
+      .replace(/\/+$/, '');
+    cfg = { repo: cleanRepo, token: (token || '').trim() };
+    localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+    sha = null;
+    this.init();
+  },
 
   loadLocal() {
     try { const raw = localStorage.getItem(LOCAL_KEY); return raw ? JSON.parse(raw) : null; }
@@ -47,93 +74,93 @@ export const store = {
   // Chiamata dall'app a ogni modifica dello stato.
   async persist(stato) {
     this.saveLocal(stato);
-    if (fb && currentUser && !applying) {
-      try {
-        await fb.setDoc(
-          fb.doc(fb.db, 'users', currentUser.uid, 'data', 'state'),
-          { stato, updatedAt: fb.serverTimestamp() }
-        );
-      } catch (e) {
-        // offline: la persistenza locale di Firestore farà il flush al ritorno online
-        console.warn('persist deferita (offline?):', e.message);
-      }
-    }
+    localStorage.setItem(UPDATED_KEY, String(Date.now()));
+    if (this.isEnabled()) this._pushDebounced();
   },
 
-  async initFirebase() {
-    if (!FIREBASE_ENABLED) { cbs.status('local'); return; }
-    try {
-      const [appMod, authMod, fsMod] = await Promise.all([
-        import(`${SDK}/firebase-app.js`),
-        import(`${SDK}/firebase-auth.js`),
-        import(`${SDK}/firebase-firestore.js`)
-      ]);
-      const app = appMod.initializeApp(firebaseConfig);
-      // Persistenza offline (IndexedDB) con supporto multi-tab.
-      const db = fsMod.initializeFirestore(app, {
-        localCache: fsMod.persistentLocalCache({
-          tabManager: fsMod.persistentMultipleTabManager()
-        })
-      });
-      const auth = authMod.getAuth(app);
-
-      fb = {
-        app, db, auth,
-        doc: fsMod.doc, setDoc: fsMod.setDoc, onSnapshot: fsMod.onSnapshot,
-        serverTimestamp: fsMod.serverTimestamp,
-        GoogleAuthProvider: authMod.GoogleAuthProvider,
-        signInWithPopup: authMod.signInWithPopup,
-        signOut: authMod.signOut,
-        createUser: authMod.createUserWithEmailAndPassword,
-        signInEmail: authMod.signInWithEmailAndPassword
-      };
-
-      authMod.onAuthStateChanged(auth, (user) => {
-        currentUser = user;
-        seeded = false;
-        if (unsub) { unsub(); unsub = null; }
-        cbs.auth(user);
-        if (user) this._subscribe(user);
-        else cbs.status('local');
-      });
-      cbs.status('ready');
-    } catch (e) {
-      console.error('initFirebase fallita:', e);
-      cbs.status('error');
+  init() {
+    cfg = loadCfg();
+    if (!this.isEnabled()) { cbs.status('local'); return; }
+    if (!started) {
+      started = true;
+      window.addEventListener('online', () => { pending ? this._push() : this._pull(); });
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) this._pull(); });
+      window.addEventListener('focus', () => this._pull());
     }
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => { if (!document.hidden) this._pull(); }, POLL_MS);
+    this._pull();
   },
 
-  _subscribe(user) {
-    const ref = fb.doc(fb.db, 'users', user.uid, 'data', 'state');
+  _pushDebounced() {
+    pending = true;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => this._push(), DEBOUNCE_MS);
+  },
+
+  async _push() {
+    if (!this.isEnabled()) return;
     cbs.status('syncing');
-    unsub = fb.onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
-        // Primo accesso su account vuoto: semina il cloud con i dati locali.
-        if (!seeded) {
-          seeded = true;
-          const local = this.loadLocal();
-          if (local) this.persist(local);
-        }
-        cbs.status('synced');
-        return;
+    const updatedAt = localUpdatedAt() || Date.now();
+    const stato = this.loadLocal() || {};
+    const content = b64encode(JSON.stringify({ stato, updatedAt }));
+    const body = { message: `update ${new Date(updatedAt).toISOString()}`, content };
+    if (sha) body.sha = sha;
+    try {
+      let res = await fetch(apiUrl(), { method: 'PUT', cache: 'no-store', headers: headers(), body: JSON.stringify(body) });
+      if (res.status === 409) {
+        // sha disallineato (scrittura da un altro dispositivo): rinfresca e ritenta una volta.
+        await this._pull(true);
+        if (sha) body.sha = sha; else delete body.sha;
+        res = await fetch(apiUrl(), { method: 'PUT', cache: 'no-store', headers: headers(), body: JSON.stringify(body) });
       }
-      const data = snap.data();
-      if (data && data.stato) {
-        applying = true;
-        this.saveLocal(data.stato);
-        cbs.remote(data.stato, snap.metadata.fromCache);
-        applying = false;
-      }
-      cbs.status(snap.metadata.fromCache ? 'offline' : 'synced');
-    }, (err) => {
-      console.error('snapshot error:', err);
-      cbs.status('error');
-    });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      sha = data.content && data.content.sha;
+      pending = false;
+      cbs.status('synced');
+    } catch (e) {
+      console.warn('push fallita (offline?):', e.message);
+      cbs.status('offline');
+    }
   },
 
-  // --- Azioni di autenticazione ---
-  async loginGoogle()           { return fb.signInWithPopup(fb.auth, new fb.GoogleAuthProvider()); },
-  async loginEmail(email, pw)   { return fb.signInEmail(fb.auth, email, pw); },
-  async registerEmail(email, pw){ return fb.createUser(fb.auth, email, pw); },
-  async logout()                { return fb.signOut(fb.auth); }
+  // forceShaOnly: usato dal retry del 409 per aggiornare solo lo sha senza toccare i dati locali.
+  async _pull(forceShaOnly = false) {
+    if (!this.isEnabled()) return { ok: false, error: 'non configurato' };
+    try {
+      const res = await fetch(apiUrl(), { cache: 'no-store', headers: headers() });
+      if (res.status === 404) { sha = null; await this._push(); return { ok: true }; }
+      if (!res.ok) {
+        const msg = (res.status === 401 || res.status === 403)
+          ? 'Token non valido o permessi insufficienti'
+          : 'HTTP ' + res.status;
+        cbs.status('error');
+        return { ok: false, error: msg };
+      }
+      const data = await res.json();
+      sha = data.sha;
+      if (forceShaOnly) return { ok: true };
+      const parsed = JSON.parse(b64decode(data.content));
+      const remoteUpdated = Number(parsed.updatedAt || 0);
+      if (!pending && parsed.stato && remoteUpdated > localUpdatedAt()) {
+        this.saveLocal(parsed.stato);
+        localStorage.setItem(UPDATED_KEY, String(remoteUpdated));
+        cbs.remote(parsed.stato);
+      }
+      cbs.status('synced');
+      return { ok: true };
+    } catch (e) {
+      console.warn('pull fallita (offline?):', e.message);
+      cbs.status('offline');
+      return { ok: false, error: e.message };
+    }
+  },
+
+  // Verifica/forza una sincronizzazione (bottone "Sincronizza ora").
+  async testConnection() {
+    if (!this.isEnabled()) return { ok: false, error: 'Inserisci repository e token' };
+    cbs.status('syncing');
+    return this._pull();
+  }
 };

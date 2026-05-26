@@ -6,11 +6,10 @@
 //   - Librerie CDN (Chart.js, treemap): runtime cache, stale-while-revalidate.
 //   - Asset pesanti OCR (Tesseract core/wasm, traineddata, pdf.js worker):
 //     runtime cache, cache-first dopo il primo download → OCR offline.
-//   - Firebase / Firestore / Google APIs: SEMPRE dalla rete (mai cache):
-//     gestiscono da soli la persistenza offline.
+//   - API GitHub (sync): SEMPRE dalla rete (mai cache).
 // ============================================================
 
-const VERSION = 'sf-v1';
+const VERSION = 'sf-v2';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -20,7 +19,6 @@ const SHELL_ASSETS = [
   './css/styles.css',
   './js/app.js',
   './js/store.js',
-  './js/firebase-config.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -28,15 +26,9 @@ const SHELL_ASSETS = [
   './icons/maskable-512.png'
 ];
 
-// Host che NON devono mai essere serviti dalla cache (dati live / auth).
+// Host che NON devono mai essere serviti dalla cache (dati live / sync).
 const NETWORK_ONLY_HOSTS = [
-  'firestore.googleapis.com',
-  'firebase.googleapis.com',
-  'identitytoolkit.googleapis.com',
-  'securetoken.googleapis.com',
-  'www.googleapis.com',
-  'apis.google.com',
-  'accounts.google.com'
+  'api.github.com'
 ];
 
 self.addEventListener('install', (event) => {
