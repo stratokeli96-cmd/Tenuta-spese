@@ -98,6 +98,30 @@ export const store = {
     pushTimer = setTimeout(() => this._push(), DEBOUNCE_MS);
   },
 
+  // GET del file remoto. → { missing:true } se assente (404); altrimenti
+  // { sha, updatedAt, stato }. Lancia con .httpStatus sugli altri errori HTTP.
+  async _fetchRemote() {
+    const res = await fetch(apiUrl(), { cache: 'no-store', headers: headers() });
+    if (res.status === 404) return { missing: true };
+    if (!res.ok) {
+      const msg = (res.status === 401 || res.status === 403)
+        ? 'Token non valido o permessi insufficienti'
+        : 'HTTP ' + res.status;
+      const err = new Error(msg);
+      err.httpStatus = res.status;
+      throw err;
+    }
+    const data = await res.json();
+    const parsed = JSON.parse(b64decode(data.content));
+    return { sha: data.sha, updatedAt: Number(parsed.updatedAt || 0), stato: parsed.stato };
+  },
+
+  _applyRemote(stato, updatedAt) {
+    this.saveLocal(stato);
+    localStorage.setItem(UPDATED_KEY, String(updatedAt));
+    cbs.remote(stato);
+  },
+
   async _push() {
     if (!this.isEnabled()) return;
     cbs.status('syncing');
@@ -109,9 +133,21 @@ export const store = {
     try {
       let res = await fetch(apiUrl(), { method: 'PUT', cache: 'no-store', headers: headers(), body: JSON.stringify(body) });
       if (res.status === 409) {
-        // sha disallineato (scrittura da un altro dispositivo): rinfresca e ritenta una volta.
-        await this._pull(true);
-        if (sha) body.sha = sha; else delete body.sha;
+        // Conflitto (scrittura da un altro dispositivo): last-write-wins per updatedAt.
+        const r = await this._fetchRemote();
+        if (!r.missing) {
+          sha = r.sha;
+          if (r.stato && r.updatedAt > updatedAt) {
+            // Il remoto è più recente del nostro push: vince il remoto, niente overwrite.
+            this._applyRemote(r.stato, r.updatedAt);
+            pending = false;
+            cbs.status('synced');
+            return;
+          }
+          body.sha = sha; // il nostro è più recente: ripush con sha aggiornato
+        } else {
+          delete body.sha;
+        }
         res = await fetch(apiUrl(), { method: 'PUT', cache: 'no-store', headers: headers(), body: JSON.stringify(body) });
       }
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -125,34 +161,20 @@ export const store = {
     }
   },
 
-  // forceShaOnly: usato dal retry del 409 per aggiornare solo lo sha senza toccare i dati locali.
-  async _pull(forceShaOnly = false) {
+  async _pull() {
     if (!this.isEnabled()) return { ok: false, error: 'non configurato' };
     try {
-      const res = await fetch(apiUrl(), { cache: 'no-store', headers: headers() });
-      if (res.status === 404) { sha = null; await this._push(); return { ok: true }; }
-      if (!res.ok) {
-        const msg = (res.status === 401 || res.status === 403)
-          ? 'Token non valido o permessi insufficienti'
-          : 'HTTP ' + res.status;
-        cbs.status('error');
-        return { ok: false, error: msg };
-      }
-      const data = await res.json();
-      sha = data.sha;
-      if (forceShaOnly) return { ok: true };
-      const parsed = JSON.parse(b64decode(data.content));
-      const remoteUpdated = Number(parsed.updatedAt || 0);
-      if (!pending && parsed.stato && remoteUpdated > localUpdatedAt()) {
-        this.saveLocal(parsed.stato);
-        localStorage.setItem(UPDATED_KEY, String(remoteUpdated));
-        cbs.remote(parsed.stato);
+      const r = await this._fetchRemote();
+      if (r.missing) { sha = null; await this._push(); return { ok: true }; }
+      sha = r.sha;
+      if (!pending && r.stato && r.updatedAt > localUpdatedAt()) {
+        this._applyRemote(r.stato, r.updatedAt);
       }
       cbs.status('synced');
       return { ok: true };
     } catch (e) {
-      console.warn('pull fallita (offline?):', e.message);
-      cbs.status('offline');
+      console.warn('pull fallita:', e.message);
+      cbs.status(e.httpStatus ? 'error' : 'offline');
       return { ok: false, error: e.message };
     }
   },
