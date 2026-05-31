@@ -1708,22 +1708,8 @@ function scaricaFile(nome, contenuto, mime) {
 }
 
 /* ============================================================
-   AUTENTICAZIONE & SYNC UI
+   SYNC UI (GitHub)
    ============================================================ */
-function aggiornaAuthUI(user) {
-  const out = document.getElementById('auth-logged-out');
-  const inn = document.getElementById('auth-logged-in');
-  const mail = document.getElementById('user-email');
-  if (!out || !inn) return;
-  if (user) {
-    out.style.display = 'none';
-    inn.style.display = '';
-    if (mail) mail.textContent = user.email || user.displayName || 'Account collegato';
-  } else {
-    out.style.display = '';
-    inn.style.display = 'none';
-  }
-}
 function aggiornaStatoSync(stato) {
   const map = {
     local:   ['#6a6862', 'Solo locale'],
@@ -1739,52 +1725,38 @@ function aggiornaStatoSync(stato) {
   if (lbl) lbl.textContent = t;
 }
 
-// Modale login
-const modalLogin = document.getElementById('modal-login');
-function apriLogin() {
-  if (!store.isEnabled()) {
-    toast('Firebase non configurato: apri SETUP.md e incolla la config in js/firebase-config.js', 'warning', 6000);
-    return;
-  }
-  modalLogin?.classList.add('active');
+// Impostazioni → Sincronizzazione (GitHub)
+function popolaConfigSync() {
+  const { repo, token } = store.getConfig();
+  const r = document.getElementById('sync-repo');
+  const t = document.getElementById('sync-token');
+  if (r) r.value = repo || '';
+  if (t) t.value = token || '';
 }
-function chiudiLogin() { modalLogin?.classList.remove('active'); }
-
-document.getElementById('btn-login')?.addEventListener('click', apriLogin);
-document.getElementById('login-close')?.addEventListener('click', chiudiLogin);
-document.getElementById('btn-logout')?.addEventListener('click', async () => {
-  try { await store.logout(); toast('Disconnesso. I dati restano su questo dispositivo.', 'info'); }
-  catch (e) { toast('Errore logout: ' + e.message, 'danger'); }
+document.getElementById('btn-sync-save')?.addEventListener('click', () => {
+  const repo  = document.getElementById('sync-repo')?.value.trim() || '';
+  const token = document.getElementById('sync-token')?.value.trim() || '';
+  if (!repo || !token) { toast('Inserisci repository (owner/repo) e token.', 'warning'); return; }
+  store.setConfig({ repo, token });
+  popolaConfigSync();
+  toast('Configurazione salvata. Sincronizzazione avviata.', 'success');
 });
-document.getElementById('login-google')?.addEventListener('click', async () => {
-  try { await store.loginGoogle(); chiudiLogin(); toast('Accesso eseguito. Sincronizzazione attiva.', 'success'); }
-  catch (e) { toast('Login Google fallito: ' + e.message, 'danger', 5000); }
-});
-document.getElementById('login-submit')?.addEventListener('click', async () => {
-  const email = document.getElementById('login-email').value.trim();
-  const pw = document.getElementById('login-password').value;
-  if (!email || !pw) { toast('Inserisci email e password.', 'warning'); return; }
-  try { await store.loginEmail(email, pw); chiudiLogin(); toast('Accesso eseguito.', 'success'); }
-  catch (e) { toast('Accesso fallito: ' + e.message, 'danger', 5000); }
-});
-document.getElementById('login-register')?.addEventListener('click', async () => {
-  const email = document.getElementById('login-email').value.trim();
-  const pw = document.getElementById('login-password').value;
-  if (!email || pw.length < 6) { toast('Email valida e password di almeno 6 caratteri.', 'warning'); return; }
-  try { await store.registerEmail(email, pw); chiudiLogin(); toast('Account creato. Sincronizzazione attiva.', 'success'); }
-  catch (e) { toast('Registrazione fallita: ' + e.message, 'danger', 5000); }
+document.getElementById('btn-sync-now')?.addEventListener('click', async () => {
+  const r = await store.testConnection();
+  if (r.ok) toast('Sincronizzazione completata.', 'success');
+  else toast('Sync fallita: ' + (r.error || 'errore sconosciuto'), 'danger', 5000);
 });
 
 /* ============================================================
    INIT
    ============================================================ */
-store.onAuth(aggiornaAuthUI);
 store.onStatus(aggiornaStatoSync);
 store.onRemote((s) => applyRemoteState(s));
 
 renderInserimento();
 renderScontrino();
 renderDashboard();
+popolaConfigSync();
 
-// avvia Firebase (no-op se non configurato): abilita login + sync cloud
-store.initFirebase();
+// avvia la sync GitHub (no-op se non configurata)
+store.init();
