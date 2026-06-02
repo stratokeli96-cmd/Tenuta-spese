@@ -13,7 +13,6 @@ js/store.js             ← persistenza offline-first + sync via API GitHub
 sw.js                   ← service worker (offline)
 manifest.webmanifest    ← installabilità PWA
 icons/                  ← icone app
-capacitor.config.ts     ← scaffolding iOS (per il futuro, non usato dalla PWA)
 piano_mensile_2.html    ← versione legacy single-file (riferimento, non usata dalla PWA)
 ```
 
