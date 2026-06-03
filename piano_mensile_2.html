@@ -2,7 +2,6 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Smart Finance · Dashboard 50/30/20</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -911,29 +910,9 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 }
 
 /* ============================================================
-   RESPONSIVE
+   DESKTOP-ONLY LAYOUT
    ============================================================ */
-@media (max-width: 980px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar {
-    position: relative;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: var(--sp-md);
-    gap: var(--sp-xs);
-  }
-  .sidebar-footer { width: 100%; margin-top: var(--sp-md); }
-  .main { padding: var(--sp-md); }
-  .page-title { font-size: 28px; }
-  .bento .tile,
-  .tile.col-4, .tile.col-6, .tile.col-8 { grid-column: span 12; }
-  .macros-row { grid-template-columns: 1fr; }
-  .macro-header { grid-template-columns: 1fr; }
-  .macro-stats { grid-template-columns: 1fr 1fr; }
-  .form-row, .form-row.three, .form-row.four { grid-template-columns: 1fr; }
-  .scontrino-row { grid-template-columns: 1fr 1fr; }
-}
+body { min-width: 1280px; }
 
 /* ============================================================
    SCROLLBAR
@@ -3057,7 +3036,10 @@ document.getElementById('btn-reset-tutto').addEventListener('click', () => {
    ============================================================ */
 function exportaJSON(prefisso) {
   const blob = JSON.stringify(stato, null, 2);
-  const nome = `${prefisso}_${stato.meseCorrente.replace(' ','_')}_${oggi()}.json`;
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
+  const nome = `dati_${stamp}.json`;
   scaricaFile(nome, blob, 'application/json');
 }
 function scaricaFile(nome, contenuto, mime) {

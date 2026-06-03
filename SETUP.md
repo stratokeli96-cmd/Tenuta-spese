@@ -1,126 +1,56 @@
-# Smart Finance — Setup PWA + sync su repo GitHub
+# Tenuta Spese — Setup desktop (v1)
 
-App PWA single-codebase: gira su **web/desktop** e si installa su **iPhone**
-("Aggiungi a Home"), con **dati sincronizzati su un repository GitHub privato** e
-**funzionamento offline** (le modifiche fatte senza rete vengono inviate al ritorno online).
-Tutto **gratis**: niente Google Cloud, niente Firebase, niente carta di credito.
+Versione **desktop-only** basata su `piano_mensile_2.html` (single-file).
+Niente PWA, niente sync GitHub, niente mobile. Apri il file in un browser desktop
+e usa la funzione di export per salvare i dati come file JSON con timestamp.
 
-```
-index.html              ← la PWA
-css/styles.css
-js/app.js               ← logica app (UI, grafici, OCR)
-js/store.js             ← persistenza offline-first + sync via API GitHub
-sw.js                   ← service worker (offline)
-manifest.webmanifest    ← installabilità PWA
-icons/                  ← icone app
-piano_mensile_2.html    ← versione legacy single-file (riferimento, non usata dalla PWA)
-```
+## 1. Avvio
 
----
+Apri `piano_mensile_2.html` con il tuo browser desktop (Chrome, Edge, Firefox).
+Il layout è ottimizzato per schermi di larghezza ≥ 1280px.
 
-## 1. Provare subito in locale (senza sync)
+## 2. Salvataggio dei dati su Google Drive
 
-I service worker e gli ES module **non funzionano aprendo il file con `file://`**:
-serve un piccolo server HTTP. Dalla cartella del progetto:
+L'app salva i dati come file JSON con nome `dati_DD-MM-YYYY_HH-MM.json`
+(es. `dati_03-06-2026_11-30.json`) tramite il normale download del browser.
 
-```bash
-python3 -m http.server 8080
-# poi apri http://localhost:8080/index.html
-```
+Per far finire il file direttamente nel tuo Google Drive senza passaggi manuali:
 
-Senza configurazione l'app funziona comunque, **solo in locale** (localStorage):
-nessuna sincronizzazione. Il pallino di stato mostra "Solo locale".
+### a) Installa Google Drive per desktop
 
----
+1. Scarica e installa **Google Drive per desktop**: <https://www.google.com/drive/download/>
+2. Esegui il login con il tuo account Google.
+3. Drive crea una unità sincronizzata (es. `G:\Il mio Drive\` su Windows,
+   `~/Google Drive/` su macOS). Tutto ciò che metti lì viene caricato sul cloud.
 
-## 2. Come funziona la sincronizzazione
+### b) Crea una cartella dedicata
 
-I dati sono un singolo file JSON in un **repo GitHub privato**, letto/scritto dal client
-tramite l'**API Contents di GitHub**. Schema del file (`tenuta-spese.json`):
+Dentro la cartella sincronizzata crea `Tenuta-spese\` (o il nome che preferisci).
 
-```json
-{ "stato": { ...stato app... }, "updatedAt": 1716000000000 }
-```
+### c) Imposta il browser per scaricare lì
 
-- **Salvataggio**: ogni modifica → subito in localStorage; un PUT *debounced* (~1.5s) crea un
-  commit nel repo. La cronologia git è quindi anche il tuo **backup versionato**.
-- **Caricamento**: all'avvio e in polling (~30s, più al focus/visibilità) l'app fa un GET; se la
-  versione remota è più recente (`updatedAt`), la applica.
-- **Conflitti**: *last-write-wins*. Lo `sha` del file fa da controllo di concorrenza: se due
-  dispositivi scrivono insieme, il secondo PUT gestisce il `409` rinfrescando lo `sha` e ritentando.
-- **Offline**: se il PUT fallisce, la modifica resta in coda (pill "Offline (in coda)") e parte al
-  ritorno della rete.
+**Chrome / Edge**:
+- Impostazioni → *Download*
+- *Posizione*: imposta `G:\Il mio Drive\Tenuta-spese\` (o l'equivalente macOS).
+- Disattiva *"Chiedi dove salvare ogni file prima di scaricarlo"* per evitare la
+  finestra di dialogo a ogni export.
 
-Limite richieste API GitHub: **5000/ora** autenticato; il polling ne usa ~120/ora.
+**Firefox**:
+- Impostazioni → *File e applicazioni* → *Download*
+- *Salva i file in*: imposta la cartella Drive sincronizzata.
 
----
+### d) Esporta
 
-## 3. Creare repo privato + token (una volta sola)
+Nell'app → *Impostazioni* → *Esporta JSON*. Il file viene scaricato direttamente
+nella cartella Drive e dopo qualche secondo è disponibile sul cloud.
 
-1. Crea un **repository privato** per i dati: <https://github.com/new> → nome es.
-   `tenuta-spese-data` → **Private** → *Add a README* → **Create repository**.
-2. Genera un **fine-grained token**:
-   <https://github.com/settings/personal-access-tokens/new>
-   - *Repository access* → **Only select repositories** → scegli `tenuta-spese-data`;
-   - *Permissions* → *Repository permissions* → **Contents: Read and write**;
-   - imposta una **Expiration** (i token scadono: rigenerali alla scadenza);
-   - **Generate token** → copia la stringa `github_pat_…`.
-3. Nell'app → **Impostazioni** → **Sincronizzazione (GitHub)**:
-   - **Repository**: `tuonome/tenuta-spese-data`;
-   - **Token**: il `github_pat_…`;
-   - **Salva e sincronizza** → poi **Sincronizza ora** per verificare.
+## 3. Ripristino dati
 
-> Sicurezza: il token vive **solo nel localStorage del browser** in cui lo inserisci — non finisce
-> nel codice pubblicato su Pages. Essendo fine-grained e limitato a un solo repo privato, il danno
-> in caso di compromissione è circoscritto a quel repo di dati.
+*Impostazioni* → *Importa JSON* → seleziona un file precedentemente esportato.
 
----
+## Note
 
-## 4. Pubblicare l'app (GitHub Pages)
-
-1. Carica il codice dell'app sul suo repository su GitHub.
-2. Repo → **Settings** → **Pages** → *Deploy from a branch* → branch + cartella **/ (root)** → Save.
-3. Ottieni un URL tipo `https://tuonome.github.io/tenuta-spese/`.
-
-> I path nell'app sono relativi (`./…`), quindi funziona anche sotto il sottopercorso `/<repo>/` di Pages.
-> Tieni il repo dei **dati** privato; il repo dell'**app** può essere pubblico (non contiene dati né token).
-
----
-
-## 5. Installare sull'iPhone
-
-1. Apri l'URL Pages in **Safari** sull'iPhone.
-2. Tocca **Condividi** → **Aggiungi a Home**.
-3. L'app parte a tutto schermo come un'app nativa, con la sua icona.
-4. Apri **Impostazioni** e incolla `repository` + `token` (come al punto 3): da quel momento la
-   **stessa cronologia** è allineata tra iPhone, desktop e web.
-
----
-
-## 6. Offline & stato
-
-- localStorage è la verità locale: l'app parte e funziona anche senza rete.
-- Le modifiche offline vengono inviate appena torna la connessione.
-- Il pallino di stato indica: *Solo locale / Sincronizzo / Sincronizzato / Offline (in coda) / Errore sync*.
-
-## 7. App nativa iOS / App Store (in seguito, serve un Mac)
-
-Lo scaffolding è già pronto (`capacitor.config.ts`). Su un **Mac con Xcode**:
-```bash
-npm init -y
-npm install @capacitor/core @capacitor/cli @capacitor/ios
-npx cap init "Smart Finance" "com.tuonome.smartfinance" --web-dir=.
-npx cap add ios
-npx cap copy
-npx cap open ios     # build/firma in Xcode → TestFlight / App Store
-```
-L'OCR (Tesseract.js) e la sync via fetch funzionano dentro il webview Capacitor come nel browser.
-
----
-
-## Nota tecnica: modello dati
-
-Lo stato è salvato come **file JSON singolo** (`{ stato, updatedAt }`): scelta voluta per un'app a
-utente singolo con volumi modesti — è atomica e semplice. Se un domani i dati crescessero
-enormemente, conviene spezzare il file o passare a uno storage con scritture granulari; la logica in
-`store.js` è isolata per renderlo agevole.
+- Il file `piano_mensile_2.html` è autosufficiente: non richiede server né
+  dipendenze. Può essere copiato/spostato liberamente.
+- I dati di lavoro persistono nel `localStorage` del browser. L'export è il
+  meccanismo di backup/sincronizzazione tra macchine.
