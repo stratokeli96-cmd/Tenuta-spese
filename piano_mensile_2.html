@@ -915,6 +915,60 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 body { min-width: 1280px; }
 
 /* ============================================================
+   FILE RIFERIMENTO — badge in basso a sinistra
+   ============================================================ */
+.file-ref-badge {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 360px;
+  user-select: none;
+}
+.file-ref-badge .check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #0c0c0e;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.file-ref-badge.empty .check {
+  background: var(--bg-elev-3);
+  color: var(--text-dim);
+}
+.file-ref-badge .name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.file-ref-badge.empty .name { color: var(--text-dim); }
+.file-ref-badge .label {
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================================
    SCROLLBAR
    ============================================================ */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -3004,6 +3058,7 @@ document.getElementById('file-import').addEventListener('change', e => {
           }
           stato = nuovo;
           salvaStato();
+          setFileRiferimento(file.name);
           renderImpostazioni();
           renderDashboard();
           toast('Backup importato.', 'success');
@@ -3041,6 +3096,33 @@ function exportaJSON(prefisso) {
   const stamp = `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
   const nome = `dati_${stamp}.json`;
   scaricaFile(nome, blob, 'application/json');
+  setFileRiferimento(nome);
+}
+
+/* ============================================================
+   FILE DI RIFERIMENTO
+   ============================================================ */
+const FILE_REF_KEY = 'tenuta-spese.fileRiferimento';
+function getFileRiferimento() {
+  try { return localStorage.getItem(FILE_REF_KEY) || ''; } catch(e) { return ''; }
+}
+function setFileRiferimento(nome) {
+  try { localStorage.setItem(FILE_REF_KEY, nome || ''); } catch(e) {}
+  renderFileRiferimento();
+}
+function renderFileRiferimento() {
+  const el = document.getElementById('file-ref-badge');
+  if (!el) return;
+  const nome = getFileRiferimento();
+  if (nome) {
+    el.classList.remove('empty');
+    el.querySelector('.name').textContent = nome;
+    el.title = 'File di riferimento attuale: ' + nome;
+  } else {
+    el.classList.add('empty');
+    el.querySelector('.name').textContent = 'nessun file';
+    el.title = 'Nessun file di riferimento. Esporta o importa un JSON per impostarlo.';
+  }
 }
 function scaricaFile(nome, contenuto, mime) {
   const blob = new Blob([contenuto], { type: mime });
@@ -3058,7 +3140,14 @@ function scaricaFile(nome, contenuto, mime) {
 renderInserimento();
 renderScontrino();
 renderDashboard();
+renderFileRiferimento();
 </script>
+
+<div id="file-ref-badge" class="file-ref-badge empty">
+  <span class="check">✓</span>
+  <span class="label">File:</span>
+  <span class="name">nessun file</span>
+</div>
 
 </body>
 </html>
