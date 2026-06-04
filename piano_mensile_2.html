@@ -1588,7 +1588,7 @@ body { min-width: 1240px; }
         <div id="chiusura-riepilogo"></div>
 
         <div class="alert info" style="margin-top: var(--sp-md);">
-          <strong>Cosa farà la chiusura:</strong> archivia movimenti e scontrini, somma l'eventuale avanzo di Savings al saldo riportato, azzera i movimenti del mese. Lo Storico Prodotti continua senza interruzione. Se ci sono movimenti senza macro/voce valida, ti chiederà di assegnarli prima.
+          <strong>Cosa farà la chiusura:</strong> archivia movimenti e scontrini, <strong>azzera completamente i contatori (no roll-over: l'avanzo non viene riportato)</strong>, applica il <strong>nuovo reddito</strong> ricalibrando macro e voci secondo le percentuali preimpostate. Lo Storico Prodotti continua senza interruzione. Se ci sono movimenti senza macro/voce valida, ti chiederà di assegnarli prima.
         </div>
 
         <div class="form-row">
@@ -1597,13 +1597,12 @@ body { min-width: 1240px; }
             <input type="text" id="nuovo-mese" placeholder="Giu 2026" />
           </div>
           <div class="form-group">
-            <label class="form-label">Avanzo Wants → Savings?</label>
-            <select id="avanzo-a-savings">
-              <option value="si">Sì (consigliato)</option>
-              <option value="no">No, mantieni su Wants</option>
-            </select>
+            <label class="form-label">Nuovo reddito mensile €</label>
+            <input type="number" step="1" min="0" id="nuovo-reddito" placeholder="0" />
           </div>
         </div>
+
+        <div id="recalibra-preview" style="display:none; margin-bottom: var(--sp-md);"></div>
 
         <button class="btn btn-primary" id="btn-chiudi-mese">Chiudi mese e apri il nuovo</button>
       </div>
@@ -1615,10 +1614,11 @@ body { min-width: 1240px; }
             <thead>
               <tr>
                 <th>Mese</th>
+                <th style="text-align:right;">Reddito €</th>
                 <th style="text-align:right;">Needs speso</th>
                 <th style="text-align:right;">Wants speso</th>
                 <th style="text-align:right;">Savings versato</th>
-                <th style="text-align:right;">Avanzo → Savings</th>
+                <th style="text-align:right;">Avanzo (non riportato)</th>
               </tr>
             </thead>
             <tbody id="archivio-body"></tbody>
@@ -1925,6 +1925,53 @@ function salvaStato() {
 }
 
 let stato = caricaStato();
+
+/* ============================================================
+   PERCENTUALI + RICALIBRAZIONE
+   ============================================================
+   Ogni macro ha quotaPct (percentuale del reddito).
+   Ogni voce ha quotaPct (percentuale relativa, normalizzata
+   sulla somma delle voci della macro).
+   Su cambio mese: stato.reddito = nuovo reddito, e i budget
+   vengono ricalcolati da queste percentuali. Nessun roll-over.
+   ============================================================ */
+function ensureQuotePct() {
+  ['needs','wants','savings'].forEach(id => {
+    const m = stato.macros[id];
+    if (typeof m.quotaPct !== 'number' || !isFinite(m.quotaPct)) {
+      m.quotaPct = stato.reddito > 0 ? (m.budget / stato.reddito) * 100 : 0;
+    }
+    m.voci.forEach(v => {
+      if (typeof v.quotaPct !== 'number' || !isFinite(v.quotaPct)) {
+        v.quotaPct = m.budget > 0 ? (v.budget / m.budget) * 100 : 0;
+      }
+    });
+  });
+}
+ensureQuotePct();
+
+function recalibraDaPercentuali(nuovoReddito) {
+  stato.reddito = Number(nuovoReddito) || 0;
+  ['needs','wants','savings'].forEach(id => {
+    const m = stato.macros[id];
+    m.budget = Math.round(stato.reddito * (m.quotaPct || 0) / 100);
+    const totVociPct = m.voci.reduce((a, v) => a + (Number(v.quotaPct) || 0), 0);
+    m.voci.forEach(v => {
+      v.budget = totVociPct > 0
+        ? Math.round(m.budget * ((Number(v.quotaPct) || 0) / totVociPct))
+        : 0;
+    });
+  });
+}
+
+function previewRicalibrazione(nuovoReddito) {
+  const r = Number(nuovoReddito) || 0;
+  return ['needs','wants','savings'].map(id => {
+    const m = stato.macros[id];
+    const newBudget = Math.round(r * (m.quotaPct || 0) / 100);
+    return { id, nome: m.nome, quotaPct: m.quotaPct || 0, newBudget };
+  });
+}
 
 /* ============================================================
    UTILITY
@@ -3417,9 +3464,10 @@ function renderCambioMese() {
   const sN = spesoMacro('needs');
   const sW = spesoMacro('wants');
   const sS = spesoMacro('savings');
-  const budN = stato.macros.needs.budget + (stato.saldoRiportato.needs||0);
-  const budW = stato.macros.wants.budget + (stato.saldoRiportato.wants||0);
-  const avanzoW = Math.max(0, budW - sW);
+  const budN = stato.macros.needs.budget;
+  const budW = stato.macros.wants.budget;
+  const budS = stato.macros.savings.budget;
+  const avanzoTot = Math.max(0, budN - sN) + Math.max(0, budW - sW) + Math.max(0, budS - sS);
   const orfani = movimentiOrfani();
 
   const orfaniBox = orfani.length > 0
@@ -3429,83 +3477,123 @@ function renderCambioMese() {
   div.innerHTML = `
     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Mese in chiusura</div><strong style="font-family:var(--font-display); font-size:22px;">${escapeHtml(stato.meseCorrente)}</strong></div>
+      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Reddito mese</div><strong class="num" style="font-size:18px;">${fmt(stato.reddito)}</strong></div>
+      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Avanzo totale (perso)</div><strong class="num" style="font-size:18px; color:var(--text-muted);">${fmt(avanzoTot)}</strong></div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Needs spesi</div><strong class="num" style="font-size:18px;">${fmt(sN)}</strong> / ${fmt(budN)}</div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Wants spesi</div><strong class="num" style="font-size:18px;">${fmt(sW)}</strong> / ${fmt(budW)}</div>
-      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Savings versati</div><strong class="num" style="font-size:18px; color:var(--success);">${fmt(sS)}</strong></div>
-      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Avanzo Wants → Savings</div><strong class="num" style="font-size:18px; color:var(--accent);">${fmt(avanzoW)}</strong></div>
-      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Avanzo Needs (riserva)</div><strong class="num" style="font-size:18px;">${fmt(Math.max(0, budN - sN))}</strong></div>
+      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Savings versati</div><strong class="num" style="font-size:18px; color:var(--success);">${fmt(sS)}</strong> / ${fmt(budS)}</div>
     </div>
     ${orfaniBox}
   `;
 
+  // precompila il nuovo reddito con quello corrente come suggerimento
+  const reddInp = document.getElementById('nuovo-reddito');
+  if (!reddInp.value) reddInp.value = stato.reddito || '';
+  aggiornaPreviewRicalibrazione();
+
   const tbody = document.getElementById('archivio-body');
   if (stato.archivioMesi.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Nessun mese archiviato.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nessun mese archiviato.</td></tr>';
   } else {
     tbody.innerHTML = stato.archivioMesi.map(m => `
       <tr>
         <td>${escapeHtml(m.mese)}</td>
+        <td class="amount-cell">${fmt(m.reddito||0)}</td>
         <td class="amount-cell">${fmt(m.spesoNeeds||0)}</td>
         <td class="amount-cell">${fmt(m.spesoWants||0)}</td>
         <td class="amount-cell">${fmt(m.versatoSavings||0)}</td>
-        <td class="amount-cell">${fmt(m.avanzoVerso||0)}</td>
+        <td class="amount-cell" style="color:var(--text-muted);">${fmt(m.avanzoTotale||0)}</td>
       </tr>
     `).join('');
   }
 }
 
+function aggiornaPreviewRicalibrazione() {
+  const wrap = document.getElementById('recalibra-preview');
+  if (!wrap) return;
+  const r = parseFloat(document.getElementById('nuovo-reddito').value);
+  if (!isFinite(r) || r <= 0) { wrap.style.display = 'none'; return; }
+  const preview = previewRicalibrazione(r);
+  wrap.style.display = 'block';
+  wrap.innerHTML = `
+    <div class="alert info" style="margin: 0;">
+      <strong>Preview ricalibrazione</strong> con reddito ${fmt(r)}:
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 10px;">
+        ${preview.map(p => `
+          <div style="background: var(--bg-elev-2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 10px 12px;">
+            <div style="font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim);">${escapeHtml(p.nome)} · ${p.quotaPct.toFixed(1)}%</div>
+            <div class="num" style="font-size: 18px; color: var(--accent); margin-top: 4px;">${fmt(p.newBudget)}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 document.getElementById('btn-chiudi-mese').addEventListener('click', () => {
   const nuovoMese = document.getElementById('nuovo-mese').value.trim();
+  const nuovoReddito = parseFloat(document.getElementById('nuovo-reddito').value);
   if (!nuovoMese) {
     toast('Inserisci il nome del nuovo mese.', 'warning');
     return;
   }
-  const avanzoVerso = document.getElementById('avanzo-a-savings').value === 'si';
+  if (!isFinite(nuovoReddito) || nuovoReddito <= 0) {
+    toast('Inserisci il nuovo reddito mensile.', 'warning');
+    return;
+  }
   const orfani = movimentiOrfani();
   if (orfani.length > 0) {
     apriReconciliation(orfani, () => {
-      proceedChiusura(nuovoMese, avanzoVerso);
+      proceedChiusura(nuovoMese, nuovoReddito);
     });
     return;
   }
   apriModal(
     'Chiudere il mese?',
-    `Stai chiudendo ${stato.meseCorrente} e aprendo ${nuovoMese}.`,
-    () => proceedChiusura(nuovoMese, avanzoVerso)
+    `Chiudo ${stato.meseCorrente} e apro ${nuovoMese} con reddito ${fmt(nuovoReddito)}. Tutti i contatori vengono azzerati (no roll-over) e i budget ricalibrati dalle percentuali.`,
+    () => proceedChiusura(nuovoMese, nuovoReddito)
   );
 });
 
-function proceedChiusura(nuovoMese, avanzoVerso) {
+document.getElementById('nuovo-reddito').addEventListener('input', aggiornaPreviewRicalibrazione);
+
+function proceedChiusura(nuovoMese, nuovoReddito) {
   const sN = spesoMacro('needs');
   const sW = spesoMacro('wants');
   const sS = spesoMacro('savings');
-  const budW = stato.macros.wants.budget + (stato.saldoRiportato.wants||0);
-  const budN = stato.macros.needs.budget + (stato.saldoRiportato.needs||0);
-  const avanzoW = Math.max(0, budW - sW);
-  const avanzoN = Math.max(0, budN - sN);
+  const budN = stato.macros.needs.budget;
+  const budW = stato.macros.wants.budget;
+  const budS = stato.macros.savings.budget;
+  const avanzoTot =
+      Math.max(0, budN - sN)
+    + Math.max(0, budW - sW)
+    + Math.max(0, budS - sS);
 
   stato.archivioMesi.push({
     mese: stato.meseCorrente,
+    reddito: stato.reddito,
     spesoNeeds: sN,
     spesoWants: sW,
     versatoSavings: sS,
-    avanzoVerso: avanzoVerso ? avanzoW : 0,
+    avanzoTotale: avanzoTot,
     movimenti: stato.movimenti.slice(),
     scontrini: stato.scontrini.slice()
   });
 
-  stato.saldoRiportato = {
-    needs:   avanzoN,
-    wants:   avanzoVerso ? 0 : avanzoW,
-    savings: (stato.saldoRiportato.savings||0) + sS + (avanzoVerso ? avanzoW : 0)
-  };
-
+  // No roll-over: azzeramento completo
+  stato.saldoRiportato = { needs: 0, wants: 0, savings: 0 };
   stato.movimenti = [];
   stato.scontrini = [];
   stato.righeProdotto = [];
   stato.meseCorrente = nuovoMese;
+
+  // Ricalibra budget macro+voci dal nuovo reddito
+  recalibraDaPercentuali(nuovoReddito);
+
   salvaStato();
-  toast(`Mese chiuso. Aperto ${nuovoMese}.`, 'success', 4000);
+  toast(`Mese chiuso. Aperto ${nuovoMese} · reddito ${fmt(nuovoReddito)} · budget ricalibrati.`, 'success', 4500);
+  document.getElementById('nuovo-mese').value = '';
+  document.getElementById('nuovo-reddito').value = '';
   renderCambioMese();
   renderDashboard();
 }
@@ -3621,17 +3709,22 @@ function renderImpostazioni() {
   document.getElementById('mese-input').value = stato.meseCorrente;
 
   const be = document.getElementById('macro-budget-editor');
-  be.innerHTML = ['needs','wants','savings'].map(id => {
+  be.innerHTML = `
+    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
+      Modifica il budget assoluto: la <strong>quota %</strong> verrà ricalcolata in base al reddito corrente (${fmt(stato.reddito)}) e usata per la ricalibrazione al cambio mese.
+    </p>
+  ` + ['needs','wants','savings'].map(id => {
     const m = stato.macros[id];
+    const pct = (m.quotaPct || 0).toFixed(1);
     return `
-      <div class="form-row" style="margin-bottom: 8px;">
+      <div class="form-row" style="margin-bottom: 8px; grid-template-columns: 2fr 1fr;">
         <div class="form-group">
           <label class="form-label">${escapeHtml(m.nome)} — budget €</label>
           <input type="number" step="1" min="0" data-mid="${id}" class="macro-budget-input" value="${m.budget}" />
         </div>
         <div class="form-group">
-          <label class="form-label">Saldo riportato €</label>
-          <input type="number" step="0.01" data-mid="${id}" class="macro-riporto-input" value="${(stato.saldoRiportato[id]||0).toFixed(2)}" />
+          <label class="form-label">Quota %</label>
+          <input type="text" value="${pct}%" readonly style="background: var(--bg-elev); color: var(--text-muted);" />
         </div>
       </div>
     `;
@@ -3689,8 +3782,14 @@ function renderImpostazioni() {
       const idx = parseInt(inp.dataset.idx);
       if (stato.macros[mid].voci[idx]) stato.macros[mid].voci[idx].budget = parseFloat(inp.value) || 0;
     });
+    // riallinea quotaPct delle voci come proporzione interna del budget macro
+    const m = stato.macros[mid];
+    const tot = m.voci.reduce((a, v) => a + (v.budget || 0), 0);
+    m.voci.forEach(v => {
+      v.quotaPct = tot > 0 ? (v.budget / tot) * 100 : 0;
+    });
     salvaStato();
-    toast('Voci salvate.', 'success');
+    toast('Voci salvate. Quote interne ricalcolate.', 'success');
   }));
 }
 
@@ -3707,14 +3806,13 @@ document.getElementById('btn-salva-generali').addEventListener('click', () => {
 document.getElementById('btn-salva-macro').addEventListener('click', () => {
   document.querySelectorAll('.macro-budget-input').forEach(inp => {
     const mid = inp.dataset.mid;
-    stato.macros[mid].budget = parseFloat(inp.value) || 0;
-  });
-  document.querySelectorAll('.macro-riporto-input').forEach(inp => {
-    const mid = inp.dataset.mid;
-    stato.saldoRiportato[mid] = parseFloat(inp.value) || 0;
+    const b = parseFloat(inp.value) || 0;
+    stato.macros[mid].budget = b;
+    // aggiorna quotaPct in base al reddito corrente
+    stato.macros[mid].quotaPct = stato.reddito > 0 ? (b / stato.reddito) * 100 : 0;
   });
   salvaStato();
-  toast('Budget aggiornati.', 'success');
+  toast('Budget aggiornati. Percentuali ricalcolate dal reddito corrente.', 'success');
   renderDashboard();
 });
 
@@ -3722,13 +3820,14 @@ document.getElementById('btn-preset-503020').addEventListener('click', () => {
   const r = stato.reddito;
   apriModal(
     'Applicare preset 50/30/20?',
-    `Imposterà: Needs ${fmt(r*0.5)}, Wants ${fmt(r*0.3)}, Savings ${fmt(r*0.2)}. I budget di voce restano invariati.`,
+    `Imposterà le quote percentuali: Needs 50%, Wants 30%, Savings 20%. I budget verranno ricalibrati sul reddito corrente (${fmt(r)}) e usati anche per i mesi futuri (fino a modifica). Le proporzioni interne delle voci restano invariate.`,
     () => {
-      stato.macros.needs.budget   = Math.round(r * 0.5);
-      stato.macros.wants.budget   = Math.round(r * 0.3);
-      stato.macros.savings.budget = Math.round(r * 0.2);
+      stato.macros.needs.quotaPct   = 50;
+      stato.macros.wants.quotaPct   = 30;
+      stato.macros.savings.quotaPct = 20;
+      recalibraDaPercentuali(r);
       salvaStato();
-      toast('Preset 50/30/20 applicato.', 'success');
+      toast('Preset 50/30/20 applicato e budget ricalibrati.', 'success');
       renderImpostazioni();
       renderDashboard();
     }
@@ -3756,6 +3855,7 @@ document.getElementById('file-import').addEventListener('change', e => {
             nuovo = Object.assign({}, JSON.parse(JSON.stringify(STATO_DEFAULT)), dati);
           }
           stato = nuovo;
+          ensureQuotePct();
           salvaStato();
           setFileRiferimento(file.name);
           renderImpostazioni();
