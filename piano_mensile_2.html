@@ -2889,9 +2889,29 @@ function drawTreemap(canvasId, macroId) {
    SCONTRINO OCR
    ============================================================ */
 const CATEGORIE_ALIMENTARI = [
-  'Verdura', 'Frutta', 'Carne/Salumi', 'Pesce', 'Latticini',
-  'Surgelati', 'Dispensa', 'Panetteria', 'Bevande', 'Bevande/Alcolici',
-  'Igiene/Casa', 'Altro'
+  'Ortofrutta',
+  'Carni e Salumi',
+  'Pesce e Frutti di Mare',
+  'Latticini e Uova',
+  'Pane e Panetteria',
+  'Pasta, Riso e Cereali',
+  'Scatolame e Conserve',
+  'Olio, Aceto e Salse',
+  'Surgelati',
+  'Snack e Dolciumi',
+  'Colazione e Merende',
+  'Bevande Analcoliche',
+  'Vini, Birre e Alcolici',
+  'Caffè, Tè e Tisane',
+  'Igiene Personale',
+  'Cura della Casa',
+  'Carta e Usa-e-getta',
+  'Animali Domestici',
+  'Bambini e Infanzia',
+  'Farmacia e Parafarmacia',
+  'Casa e Cancelleria',
+  'Sconti e Buoni',
+  'Altro'
 ];
 
 let ocrText = '';
@@ -2972,6 +2992,12 @@ async function gestisciFileOCR(file) {
   ocrStatus.textContent = 'Caricamento file…';
 
   try {
+    // HEIC/HEIF non sono decodificabili da <img>/canvas nei browser desktop.
+    // Diamo subito un messaggio chiaro per evitare un OCR su immagine vuota.
+    if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type)) {
+      throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
+    }
+
     let imageDataUrl;
     if (file.type === 'application/pdf') {
       ocrStatus.textContent = 'Rendering PDF…';
@@ -2980,22 +3006,20 @@ async function gestisciFileOCR(file) {
       imageDataUrl = await fileToDataUrl(file);
     }
 
-    ocrStatus.textContent = 'OCR in corso…';
+    ocrStatus.textContent = 'Pre-processing immagine…';
+    const processedDataUrl = await preprocessReceiptImage(imageDataUrl);
+
     if (typeof Tesseract === 'undefined') {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
-    const result = await Tesseract.recognize(imageDataUrl, 'ita', {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          const pct = Math.round(m.progress * 100);
-          ocrProgressFill.style.width = pct + '%';
-          ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%';
-        } else if (m.status) {
-          ocrStatus.textContent = m.status;
-        }
-      }
+
+    ocrStatus.textContent = 'OCR in corso…';
+    const text = await runTesseract(processedDataUrl, pct => {
+      ocrProgressFill.style.width = pct + '%';
+      ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%';
     });
-    ocrText = result.data.text || '';
+
+    ocrText = text || '';
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
@@ -3004,13 +3028,108 @@ async function gestisciFileOCR(file) {
 
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
-    toast(`OCR completato: ${parsed.righe.length} righe estratte`, 'success');
-  } catch(e) {
+
+    const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
+    const msg = conSconto
+      ? `OCR completato: ${parsed.righe.length} righe (${conSconto} con sconto applicato)`
+      : `OCR completato: ${parsed.righe.length} righe estratte`;
+    toast(msg, 'success');
+  } catch (e) {
     console.error(e);
     ocrStatus.textContent = '';
     ocrProgress.classList.remove('active');
     toast('OCR fallito: ' + e.message, 'danger', 5000);
     ocrPreview.classList.add('active');
+  }
+}
+
+/**
+ * Pre-processing per migliorare la leggibilità OCR di foto da smartphone
+ * o screenshot da PC: upscale a ~2000px lato lungo + grayscale + contrasto
+ * lineare attorno alla media. Restituisce un dataURL PNG.
+ */
+async function preprocessReceiptImage(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const TARGET_LONG = 2000;
+        const longSide = Math.max(img.naturalWidth, img.naturalHeight);
+        const scale = longSide > 0 ? Math.min(3, Math.max(1, TARGET_LONG / longSide)) : 1;
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const imgData = ctx.getImageData(0, 0, w, h);
+        const d = imgData.data;
+
+        // calcolo media luminosità per ancorare il contrasto
+        let sum = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        }
+        const mean = sum / (d.length / 4);
+        const CONTRAST = 1.5;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          let v = (gray - mean) * CONTRAST + mean;
+          if (v < 0) v = 0; else if (v > 255) v = 255;
+          d[i] = d[i + 1] = d[i + 2] = v;
+        }
+        ctx.putImageData(imgData, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (err) {
+        console.warn('Pre-processing fallito, uso immagine originale:', err);
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * OCR con Tesseract.js: usa createWorker per poter impostare PSM e
+ * preserve_interword_spaces (cruciali per mantenere allineate le colonne
+ * "descrizione" + "EURO" dello scontrino).
+ */
+async function runTesseract(dataUrl, onProgress) {
+  // Tesseract v5: createWorker è async e accetta direttamente la lingua
+  let worker;
+  try {
+    worker = await Tesseract.createWorker('ita', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+          onProgress(Math.round(m.progress * 100));
+        }
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6',          // assume a single uniform block of text (scontrino in colonna)
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300'
+    });
+    const { data } = await worker.recognize(dataUrl);
+    return data.text || '';
+  } catch (e) {
+    // Fallback al vecchio Tesseract.recognize (compat v4)
+    console.warn('createWorker fallito, fallback a Tesseract.recognize:', e);
+    const result = await Tesseract.recognize(dataUrl, 'ita', {
+      logger: m => {
+        if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+          onProgress(Math.round(m.progress * 100));
+        }
+      }
+    });
+    return result.data.text || '';
+  } finally {
+    if (worker) { try { await worker.terminate(); } catch (_) {} }
   }
 }
 
@@ -3039,39 +3158,90 @@ async function renderPdfFirstPage(file) {
   return canvas.toDataURL('image/png');
 }
 
+/**
+ * Parser scontrino — struttura "tipo Esselunga / Coop / Conad":
+ *   <prodotto>  [codice IVA *a/*b/*c/*d]   <prezzo>
+ *   [SCONTO ...                              <importo>-S]
+ *   ...
+ *   TOTALE EURO                              <totale>
+ *
+ * Strategia:
+ *  1) Normalizza il testo (spazi, OCR-noise, marker IVA "*a").
+ *  2) Per ogni riga estrae il prezzo finale (numero con virgola/punto e 2 decimali).
+ *  3) Le righe SCONTO / BUONO / coupon vengono sottratte dal prodotto precedente.
+ *     prezzo_finale = prezzo_lordo − somma(sconti).
+ *  4) TOTALE viene usato come check (e fallback se manca).
+ */
 function parseScontrino(txt) {
-  const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rawLines = txt.replace(/ /g, ' ').split(/\r?\n/);
+  // Pulisci e mantieni anche la versione "originale" della riga per estrarre il nome
+  const lines = rawLines.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
   const result = { negozio: '', localita: '', data: '', totale: 0, righe: [] };
 
-  for (const l of lines) {
-    if (l.length >= 4 && l.length <= 40 && /^[A-Z][A-Z\s\.&'\-0-9]+$/.test(l)) {
-      result.negozio = capitalize(l);
+  // ---------- Negozio ----------
+  // Cerca nelle prime 8 righe non vuote: preferisce "S.P.A." / "S.R.L." / "SUPERMERCATO"
+  for (const l of lines.slice(0, 10)) {
+    if (/S\.?\s*P\.?\s*A\.?|S\.?\s*R\.?\s*L\.?|SUPERMERCAT|IPERMERCAT|DISCOUNT|CONAD|ESSELUNGA|COOP\b|LIDL|EUROSPIN|CARREFOUR|PAM\b|PENNY|TIGRE|DESPAR/i.test(l)) {
+      result.negozio = capitalize(l.replace(/[*]+/g, '').trim());
       break;
     }
   }
-
-  for (const l of lines) {
-    const md = l.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{2,4})/);
-    if (md) {
-      let [_, dd, mm, yy] = md;
-      if (yy.length === 2) yy = (parseInt(yy) > 50 ? '19' : '20') + yy;
-      const iso = `${yy}-${mm}-${dd}`;
-      if (!isNaN(new Date(iso).getTime())) {
-        result.data = iso;
+  // Fallback: prima riga "MAIUSCOLA" plausibile
+  if (!result.negozio) {
+    for (const l of lines.slice(0, 8)) {
+      if (l.length >= 4 && l.length <= 40 &&
+          /^[A-Z][A-Z\s.&'\-0-9]{3,}$/.test(l) &&
+          !/EURO|IVA|TOTALE|DOCUMENT|SCONTRINO/.test(l)) {
+        result.negozio = capitalize(l);
         break;
       }
     }
   }
 
-  const PRICE_RE = /([\-]?\d{1,4}[.,]\d{2})\s*([A-Z]{0,2})?\s*$/;
-  const SKIP_RE = /^(IVA|RESTO|CONTANTI|CONTANTE|CARTA|BANCOMAT|POS|SUBTOT|SUB[- ]?TOTALE|TOTALE\s*COMPLESSIVO|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOC|RT|MATRIC|C\.?F\.?|P\.?\s*IVA|CASSA|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE|CODICE|TICKET|EAN)/i;
-  const TOTAL_RE = /^(TOTALE|TOT\.?|EURO|TOT\s+EURO|TOTALE\s+EURO|TOT\s+VENDITA|VENDITA)\b/i;
+  // ---------- Data ----------
+  for (const l of lines) {
+    const md = l.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{2,4})/);
+    if (md) {
+      let [, dd, mm, yy] = md;
+      if (yy.length === 2) yy = (parseInt(yy, 10) > 50 ? '19' : '20') + yy;
+      const iso = `${yy}-${mm}-${dd}`;
+      if (!isNaN(new Date(iso).getTime())) { result.data = iso; break; }
+    }
+  }
+
+  // ---------- Regex ----------
+  // Prezzo a fine riga: opz. segno '-', cifre, virgola/punto, 2 decimali,
+  // opz. trattino finale e/o lettera "S" (suffisso "-S" tipico di sconti Esselunga).
+  const PRICE_RE = /(-?\d{1,4}[.,]\d{2})\s*(-)?\s*([A-Z])?\s*$/;
+  // Marker IVA in mezzo alla riga: "*a", "*b", "*c", "*d" — vanno tolti prima del match prezzo
+  const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
+
+  // Righe da ignorare totalmente
+  const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|RESTO|CONTANTI|CONTANTE|CARTA|BANCOMAT|POS|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*IVA\b|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE\b|CODICE|TICKET\b|EAN\b|VIA\s|CORSO\s|PIAZZA\s|VIALE\s|DI\s+CUI\s+IVA|ARRIVEDERCI|AUTENTIC)/i;
+
+  // Riga del totale finale
+  const TOTAL_RE = /^(TOTALE\s+EURO|TOTAL[E]?\b|TOT\.?\s*EURO|TOTALE\s+COMPLESSIVO|TOT\s+VENDITA)/i;
+
+  // Riga di sconto/coupon — viene sottratta dal prodotto precedente
+  const SCONTO_RE = /^(SCONTO\b|BUONO\s+SPESA|BUONO\b|COUPON\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|VOUCHER\b|CARTA\s+FEDELT|FEDELTA)/i;
+
+  // Riga "intestazione colonna" tipo "IVA EURO" o "DESCRIZIONE PREZZO"
+  const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO)/i;
+
+  let lastProductIdx = -1;
 
   for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
+    const lOrig = lines[i];
+    // Versione "pulita" per il match: rimuove i tag IVA tipo "*a"
+    const l = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
     const lUp = l.toUpperCase();
 
-    if (TOTAL_RE.test(lUp) && !/SUB/.test(lUp)) {
+    if (!l) continue;
+    if (HEADER_RE.test(lUp)) continue;
+
+    // TOTALE
+    if (TOTAL_RE.test(lUp)) {
       const m = l.match(PRICE_RE);
       if (m) {
         const v = parseFloat(m[1].replace(',', '.'));
@@ -3082,49 +3252,285 @@ function parseScontrino(txt) {
 
     if (SKIP_RE.test(lUp)) continue;
 
-    const m = l.match(PRICE_RE);
-    if (m) {
-      const v = parseFloat(m[1].replace(',', '.'));
-      if (isNaN(v) || v <= 0 || v > 999) continue;
-      const nomeRaw = l.slice(0, m.index).trim().replace(/[\s,;:]+$/, '');
-      if (!nomeRaw || /^\d/.test(nomeRaw) || nomeRaw.length < 2) continue;
-      result.righe.push({
-        prodotto: capitalize(nomeRaw),
-        categoria: indovinaCategoria(nomeRaw),
-        prezzo: v
-      });
+    // SCONTO/BUONO esplicito → sottrae al prodotto precedente
+    if (SCONTO_RE.test(lUp)) {
+      const m = l.match(PRICE_RE);
+      if (m && lastProductIdx >= 0) {
+        const v = Math.abs(parseFloat(m[1].replace(',', '.')));
+        if (!isNaN(v) && v > 0) applicaSconto(result.righe[lastProductIdx], v);
+      }
+      continue;
     }
+
+    // Tentativo di estrarre <nome> + <prezzo>
+    const m = l.match(PRICE_RE);
+    if (!m) continue;
+
+    let valore = parseFloat(m[1].replace(',', '.'));
+    const isNegativeAmount = m[2] === '-' || m[1].startsWith('-') || /-S?$/i.test(m[0].trim());
+    if (isNaN(valore)) continue;
+
+    // Importi negativi senza parola "SCONTO" → trattali come sconto sul prodotto precedente
+    if (isNegativeAmount) {
+      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(valore));
+      continue;
+    }
+
+    // Plausibilità prezzo unitario
+    if (valore <= 0 || valore > 999) continue;
+
+    // Estrai il nome prodotto dalla riga ORIGINALE (mantenendo eventuali maiuscole/punti)
+    // ma rimuovendo il tag IVA e il prezzo
+    let nomeRaw = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
+    nomeRaw = nomeRaw.slice(0, nomeRaw.length - m[0].length).trim();
+    nomeRaw = nomeRaw.replace(/[\s,;:.\-]+$/, '');
+
+    // Scarta righe spurie (puro numero, sigle troppo corte, righe che iniziano con cifra → quantità)
+    if (!nomeRaw || nomeRaw.length < 2) continue;
+    if (/^\d+([.,]\d+)?\s*X\s*\d/i.test(nomeRaw)) continue; // "2 X 1,49"
+    if (/^[\d\s.,X]+$/i.test(nomeRaw)) continue;
+
+    result.righe.push({
+      prodotto: capitalize(nomeRaw),
+      categoria: indovinaCategoria(nomeRaw),
+      prezzo: round2(valore),
+      prezzoLordo: round2(valore),
+      sconto: 0
+    });
+    lastProductIdx = result.righe.length - 1;
   }
 
+  // Rimuovi prodotti azzerati (es. sconto >= prezzo lordo)
+  result.righe = result.righe.filter(r => r.prezzo > 0);
+
   if (!result.totale && result.righe.length) {
-    result.totale = result.righe.reduce((a,r) => a + r.prezzo, 0);
+    result.totale = result.righe.reduce((a, r) => a + r.prezzo, 0);
   }
   return result;
 }
+
+function applicaSconto(riga, importo) {
+  riga.sconto = round2((riga.sconto || 0) + importo);
+  riga.prezzo = round2(Math.max(0, (riga.prezzoLordo || riga.prezzo) - riga.sconto));
+}
+function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
 function capitalize(s) {
   return s.toLowerCase().split(/\s+/).map(w => w.length ? w[0].toUpperCase()+w.slice(1) : w).join(' ').trim();
 }
 
+/**
+ * Dizionario categorie → keyword (radici).
+ * Le keyword sono confrontate come substring case-insensitive su un nome
+ * normalizzato (lowercase + senza accenti). Per evitare collisioni del tipo
+ * "the" che matcherebbe "lethe", vince la keyword più LUNGA che fa match.
+ */
 const CAT_HINTS = {
-  'Verdura':       ['insalat','fungh','patat','pomod','zucch','melanz','carot','spinac','cipoll','verdur','broccol','cavol','peperon','sedan','rucol','finocch'],
-  'Frutta':        ['mela','mele','pera','banan','fragol','ananas','arancia','limon','uva','pesca','albicocc','kiw','mandarin','clement','frutt','mirtill'],
-  'Carne/Salumi':  ['petto','pollo','suino','manzo','vitell','bovin','salam','prosciut','procrudo','wurstel','salsicc','bresaol','mortadell','speck','cotech','tacchin','carne'],
-  'Pesce':         ['salmon','tonno','merluz','gambero','vongol','calam','pesce','sgombr','orata','spigol','branzin','platess','sogliol','seppia'],
-  'Latticini':     ['latte','mozz','formag','grana','parmig','ricott','yogurt','yog','fage','stracch','gorgon','panna','burro','crescenz'],
-  'Surgelati':     ['surg','sl ','pizza marg','minestron','fagiolin'],
-  'Dispensa':      ['pasta','riso','sale','zucch','olio','aceto','sugo','passata','pomodor','natu','farina','biscot','cerial','muesl','crema','marmel','miele'],
-  'Panetteria':    ['pane','focacc','fett bisc','crackers','grissin','bisc'],
-  'Bevande':       ['acqua','succo','spuma','cola','aranciat','the ','thè ','tisana','tonic','energy','frizz','minerale'],
-  'Bevande/Alcolici':['birra','vino','prosecc','spritz','wisk','whisky','gin','vodka','rum','liquor','aperitiv','nebbiol','barolo','chianti'],
-  'Igiene/Casa':   ['shopper','busta','carta ig','sapone','detersiv','detergent','sgrass','dentifr','spazzol','spugn','panno','assorb','shampoo','bagno','rotolo']
+  'Ortofrutta': [
+    // frutta
+    'mela','mele','pera','pere','banan','fragol','ananas','arancia','aranci','limon','uva',
+    'pesca','pesch','albicocc','kiwi','mandarin','clement','frutt','mirtill','lampon',
+    'mora','ciliegi','cilieg','melon','angur','cocco','mango','papaya','avocado',
+    'pompelmo','fico','fichi','prugna','prugn','dattero','melagrana','melinda',
+    'fuji','royal gala','golden','granny smith',
+    // verdura / ortaggi / erbe
+    'insalatin','insalat','fungh','agaricus','patat','pomod','zucchin','melanz','carot',
+    'spinac','cipoll','verdur','broccol','cavol','peperon','sedan','rucol','finocch',
+    'asparag','radicchi','catalogn','lattug','valeriana','songin','ravanell','scarol',
+    'indivia','bietol','ortagg','aglio','prezzemol','basilic','salvia','rosmar','timo',
+    'menta','origan','erbett','cetriol','zucca','porro','cicoria','rapa','rape',
+    'barbabietol','agretti','germogli'
+  ],
+
+  'Carni e Salumi': [
+    // carni fresche
+    'pollo','petto pollo','petto tacchin','suino','manzo','vitell','bovin','tacchin',
+    'agnell','coniglio','maial','fettin','bistecc','arrosto','spezzatin','macinat',
+    'hamburger','maxi hamburger','wurstel','salsicc','cotech','zampone','cotolett',
+    'scaloppin','filett','lonza','costina','costine','braciol','rollata','tagliata',
+    'macinata','carne tritata',
+    // salumi
+    'salam','prosciut','procrudo','prosciut crudo','prosciut cotto','bresaol','mortadell',
+    'speck','pancett','capocoll','culatell','salume','salumi','wurstel','carne','carni',
+    'porchetta','coppa','guanciale'
+  ],
+
+  'Pesce e Frutti di Mare': [
+    'salmon','tonno fresco','merluz','gambero','gamber','vongol','vongolat','calam','pesce',
+    'sgombr','orata','spigol','branzin','platess','sogliol','seppia','seppi','baccal',
+    'stoccafiss','aliciotti','alici','sardin','acciug','cozza','cozze','astice','aragost',
+    'scampi','polpo','polp','surimi','rana pescatr','pescatrice','nasell','dent',
+    'pesce spada','spada','crost','molluschi','frutti di mare','frutti mare','filetto pesce'
+  ],
+
+  'Latticini e Uova': [
+    'latte','mozzar','mozz fior','formag','grana padan','grana','parmig','ricott',
+    'yogurt','yog','fage','stracchin','gorgon','panna','burro','crescenz','asiago',
+    'pecorin','cacioc','provol','scamorz','caprin','feta','brie','camembert',
+    'emmenthal','emment','fontina','taleggio','robiol','mascarpon','quark','skyr',
+    'kefir','cagliata','tomino','uova','uovo','albume','tuorli','philadelphia'
+  ],
+
+  'Pane e Panetteria': [
+    'pane','focacc','crackers','grissin','fett bisc','fett.bisc','fette biscot',
+    'schiacciat','piadin','tortill','tramezz','toast','pancarr','baguette','panin',
+    'filone','rosetta','rosett','michett','ciabatt','brioche','croiss','cornett',
+    'sfogliat','pane carasau','pane ai cereali','pane in cassetta','pane integrale',
+    'essel. pane','pane proteico'
+  ],
+
+  'Pasta, Riso e Cereali': [
+    'pasta','spaghet','penne','rigaton','fusill','lingu','tagliat','farfall','orecchiette',
+    'cannelloni','lasagn','ravioli','tortellini','tortelloni','gnocchi','riso','risott',
+    'basmati','venere','arborio','carnaroli','farina','semol','cuscus','couscous',
+    'quinoa','bulgur','farro','orzo','avena','muesl','muesli','cereal','fiocchi',
+    'pasta sfoglia','pasta brise','pasta brisé','pasta frolla','pasta pizza'
+  ],
+
+  'Scatolame e Conserve': [
+    'pelat','passata','polpa pomod','sugo','ragu','ragù','tonno scatol','tonno olio',
+    'tonno rio mare','legumi','fagiol','cece','ceci','lenticch','piselli scatol',
+    'fagiolini scatol','mais','marmel','confett','conserv','sottolio','sott olio',
+    'sottacet','sott acet','capper','olive','peperoni grigliati','natu fragola',
+    'mutti passata','marmellata','natur','natu '
+  ],
+
+  'Olio, Aceto e Salse': [
+    'olio','oliva','extra vergine','evo','aceto','balsam','sale ','sale fino','sale grosso',
+    'pepe','spezie','curry','paprik','noce moscat','cannella','vaniglia','peperoncin',
+    'maionese','mayo','ketchup','senape','salsa','soia','tabasco','tartara','barbecue',
+    'bbq','pesto','wasabi','curcum','cumin','dado','brodo','besciamell','besciamella',
+    'mandorle pelate','frutta secca','mandorle','nocciole','noci','pistacchi','pinoli',
+    'uvetta'
+  ],
+
+  'Surgelati': [
+    'surg','surgel','pizza surg','minestron','spinaci surg','fagiolin surg','verdure surg',
+    'gelato','sorbett','vasch gelat','vaschetta gelato','cornett gelat','bastoncini',
+    'crocchett','arancini','patate surg','patatine surg','total vaso','vaso 450',
+    'al forno surg'
+  ],
+
+  'Snack e Dolciumi': [
+    'biscot','cioccol','snack','patatin','chips','popcorn','noccioline','arachidi',
+    'tarall','wafer','barrett','mars','snickers','kinder','nutella','crema spalm',
+    'caramell','gomme','liquir','torron','panettone','pandoro','colomb','crostat',
+    'merendin','girella','fiesta','fonzies','pringles','dolce','dolci','cacao',
+    'baci','baiocchi','tegolino','tegolini','rigoni','fragola rigoni'
+  ],
+
+  'Colazione e Merende': [
+    'fett biscot','fette biscot','marmel','miele','confett','crema cacao','nutella',
+    'corn flakes','cereali colaz','muesli','frollin','plumcake','plum cake','crostatina',
+    'pancake','brioch','cornett','croiss','latte colaz','succo colaz'
+  ],
+
+  'Bevande Analcoliche': [
+    'acqua','minerale','frizz','naturale','succo','spuma','cola','aranciat','the freddo',
+    'tè freddo','tonic','energy','red bull','gatorade','powerade','schwepp','sprite',
+    'fanta','pepsi','crodino','san benedetto','levissima','rocchetta','sant anna',
+    'sanpellegrino','san pellegrino','ferrarelle','uliveto','nestea','lipton','estathe',
+    'mela intensa','succo mela','succo pera','succo arancia','succo ace'
+  ],
+
+  'Vini, Birre e Alcolici': [
+    'birra','bira','vino','prosecc','spritz','wisk','whisky','whiskey','gin','vodka',
+    'rum','liquor','aperitiv','nebbiol','barolo','chianti','montepulc','primit','negroam',
+    'cabern','merlot','sauvignon','pinot','syrah','baroncini','vernaccia','grappa',
+    'limoncello','amaro','jagermeister','jaeger','tequila','sambuca','martini','campari',
+    'aperol','select','ichnusa','peroni','heineken','moretti','tuborg','corona','becks',
+    'warsteiner','franziskaner','spumante','champagne','lambrusc','vernaccia baroncini'
+  ],
+
+  'Caffè, Tè e Tisane': [
+    'caff','caffe','lavazza','illy','kimbo','segafred','vergnano','espresso','grani caff',
+    'macinato caff','capsul','cialde','nespresso','dolce gusto','tè ','the ','tea',
+    'tisana','camomill','infuso','infusi','twinings','star tea','sl amm','amm classico'
+  ],
+
+  'Igiene Personale': [
+    'shampoo','balsamo capelli','bagnoschiuma','bagno schiuma','docciaschiuma',
+    'doccia schiuma','dentifr','spazzol','spazzolin','collutor','sapone','saponett',
+    'rasoio','schiuma rasatura','crema viso','crema mani','crema corpo','deod',
+    'deodor','assorb','tampax','lines','nuvenia','salviett umid','salviette umid',
+    'cotton fioc','cotton-fioc','filo interd','depilator','ceretta','make up','trucco',
+    'rossetto','mascara','crema solare','protezione solare','dopobarba','profumo',
+    'colonia','eau toilette','eau de toilette','idratant','nivea','dove'
+  ],
+
+  'Cura della Casa': [
+    'detersiv','detergent','sgrass','ammorbid','candegg','varech','anticalc','disgorg',
+    'pulit','smacchiat','vetril','cif','viakal','svelto','dixan','dash','perlana',
+    'ace','napisan','lysoform','glade','febreze','spugn','panno','panni','strofinacci',
+    'scopa','paletta','straccio','guanti','candele','deod ambient','deodorante ambient',
+    'spray amb','sapone marsiglia'
+  ],
+
+  'Carta e Usa-e-getta': [
+    'carta igienica','carta igien','rotolo','rotoli','rotolo cucina','carta cucina',
+    'asciugatutto','tovagliol','salviett carta','salviette carta','fazzolet',
+    'sacchi spazzat','sacchet umido','sacchetti spazzat','immondiz','shopper','busta',
+    'sacchett spesa','sacchetto compost','npsacchetto compost','sacchetto'
+  ],
+
+  'Animali Domestici': [
+    'cibo cane','cibo gatto','crocch','pedigree','whiskas','friskies','purina',
+    'royal canin','felix','kitekat','sheba','almo','schesir','umido gatto','umido cane',
+    'lettiera','tiragraffi','snack cane','snack gatto','ossi','osso pelle'
+  ],
+
+  'Bambini e Infanzia': [
+    'pannolin','pampers','huggies','mustela','plasmon','mellin','humana','nidina',
+    'nipiol','omogen','biscot bebe','baby','latte crescita','latte 1','latte 2',
+    'pappa','pappe','salviett bebe','salviette bebe'
+  ],
+
+  'Farmacia e Parafarmacia': [
+    'cerot','aspir','tachipir','moment','oki','enterogerm','fermenti latt','probiotic',
+    'antibiotic','antisettic','vitamin','integrat','collirio','siring','garza',
+    'disinfett','amuchin','betadine','termometro'
+  ],
+
+  'Casa e Cancelleria': [
+    'batteri','pile aa','pile aaa','pila','lampadin','candela','accendin','fiammifer',
+    'penna','quaderno','colla','nastro adesivo','scotch','forbic','penne','matite',
+    'gomma cancell','cartelin','risma carta','cariche','pile','batteria'
+  ],
+
+  'Sconti e Buoni': [
+    'sconto','sconti','buono spesa','coupon','riduzione','omaggio','fidaty','voucher',
+    'carta fedelta','fedelta','fidelity'
+  ]
 };
+
+/**
+ * Normalizza un nome prodotto: minuscolo, rimuove accenti, comprime spazi.
+ */
+function _normProdotto(s) {
+  return String(s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Categorizzazione: ritorna la categoria la cui keyword più LUNGA
+ * fa match come substring sul nome normalizzato.
+ * Se nessuna keyword matcha, ritorna 'Altro'.
+ */
 function indovinaCategoria(nome) {
-  const n = nome.toLowerCase();
-  for (const [cat, hints] of Object.entries(CAT_HINTS)) {
-    if (hints.some(h => n.includes(h))) return cat;
+  const n = _normProdotto(nome);
+  if (!n) return 'Altro';
+  let best = { cat: 'Altro', len: 0 };
+  for (const cat of Object.keys(CAT_HINTS)) {
+    for (const h of CAT_HINTS[cat]) {
+      const hn = h.toLowerCase();
+      if (hn.length > best.len && n.includes(hn)) {
+        best = { cat, len: hn.length };
+      }
+    }
   }
-  return 'Altro';
+  return best.cat;
 }
 
 function popolaPreviewDaParser(p) {
@@ -3135,7 +3541,12 @@ function popolaPreviewDaParser(p) {
   if (p.righe.length === 0) {
     aggiungiRigaScontrino();
   } else {
-    p.righe.forEach(r => aggiungiRigaScontrino(r.prodotto, r.categoria, r.prezzo));
+    p.righe.forEach(r => {
+      const label = (r.sconto && r.sconto > 0)
+        ? `${r.prodotto} (lordo ${fmt(r.prezzoLordo)} − sconto ${fmt(r.sconto)})`
+        : r.prodotto;
+      aggiungiRigaScontrino(label, r.categoria, r.prezzo);
+    });
   }
   aggiornaTotaleScontrino();
 }
