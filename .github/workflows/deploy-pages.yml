@@ -1,8 +1,7 @@
 name: Deploy PWA to GitHub Pages
 
 # Pubblica il sito statico (la PWA) su GitHub Pages.
-# Abilita Pages automaticamente al primo run (configure-pages enablement),
-# così non serve attivarlo a mano da Settings -> Pages.
+# Prerequisito (una volta sola): Settings -> Pages -> Source = "GitHub Actions".
 
 on:
   push:
@@ -32,10 +31,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure Pages (enable if needed)
+      - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Prepare site directory
         run: |
