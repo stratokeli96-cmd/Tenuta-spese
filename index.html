@@ -2,7 +2,17 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Smart Finance · Dashboard</title>
+
+<!-- PWA / iOS standalone -->
+<meta name="theme-color" content="#0a0a0c" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Tenuta Spese" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1250,6 +1260,80 @@ body { min-width: 1240px; }
 
 /* il toast-host viene spostato in alto a sinistra quando c'è il badge */
 .toast-host { bottom: auto; top: 20px; left: 20px; right: auto; }
+
+/* ============================================================
+   RESPONSIVE — iPhone / mobile (layer additivo)
+   ============================================================ */
+@media (max-width: 768px) {
+  /* layout a colonna singola */
+  .app { grid-template-columns: 1fr; }
+
+  /* la sidebar diventa una barra superiore con nav scorrevole */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    max-height: none;
+    flex-flow: row wrap;
+    align-items: center;
+    gap: 6px;
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-soft);
+    overflow-x: auto;
+  }
+  .brand { flex: 1 1 100%; font-size: 22px; margin: 0; }
+  .brand-sub { flex: 1 1 100%; margin-bottom: 6px; }
+  .sidebar .nav-group-label { display: none; }
+  .nav-item {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+  /* l'indicatore laterale dell'item attivo non ha senso nella barra orizzontale */
+  .nav-item.active::before { display: none; }
+  .nav-item.active { box-shadow: inset 0 -2px 0 var(--accent); }
+  .sidebar-footer {
+    flex: 1 1 100%;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  /* area principale: padding ridotto + safe-area per notch/barra Home */
+  .main {
+    padding: var(--sp-lg) var(--sp-md)
+             calc(env(safe-area-inset-bottom) + 96px);
+    max-width: 100%;
+  }
+
+  /* griglie multi-colonna -> impilate */
+  .bento { grid-template-columns: 1fr; }
+  .col-3, .col-4, .col-5, .col-6, .col-7, .col-8, .col-9, .col-12 { grid-column: 1 / -1; }
+  .hero-row,
+  .macros-row,
+  .macro-header,
+  .segmented { grid-template-columns: 1fr; }
+  .form-row,
+  .form-row.three { grid-template-columns: 1fr; }
+
+  /* righe transazioni/scontrino: layout più compatto e touch-friendly */
+  .tx-item { grid-template-columns: 44px 1fr auto; }
+  .scontrino-row { grid-template-columns: 1fr 1fr; row-gap: 6px; }
+
+  /* tabelle larghe: scroll orizzontale invece di rottura layout */
+  .page-title { font-size: 30px; }
+  .page-header { gap: var(--sp-md); }
+
+  /* heatmap calendario resta a 7 colonne ma celle più piccole */
+  .heatmap { gap: 3px; }
+}
+
+@media (max-width: 768px) {
+  /* contenitori con griglie a larghezza fissa: consenti lo scroll orizzontale */
+  .tx-list, .heatmap, .scontrino-table { overflow-x: auto; }
+}
 </style>
 </head>
 <body>
@@ -4351,6 +4435,17 @@ function scaricaFile(nome, contenuto, mime) {
 renderScontrino();
 renderDashboard();
 renderFileRiferimento();
+</script>
+
+<script>
+/* Registrazione service worker: abilita avvio offline (app shell + CDN in cache). */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function (err) {
+      console.warn('Service worker non registrato:', err);
+    });
+  });
+}
 </script>
 
 </body>
