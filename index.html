@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Smart Finance · Dashboard</title>
 
 <!-- PWA / iOS standalone -->
@@ -127,24 +127,38 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    LAYOUT
    ============================================================ */
 .app {
-  display: grid;
-  grid-template-columns: 240px 1fr;
+  display: block;
   min-height: 100vh;
 }
 
+/* Navigation drawer off-canvas: nascosto di default a tutte le larghezze,
+   si apre via hamburger o edge-swipe. Il markup interno resta invariato. */
 .sidebar {
-  background: linear-gradient(180deg, rgba(19,19,24,0.95) 0%, rgba(10,10,12,0.95) 100%);
+  background: linear-gradient(180deg, rgba(19,19,24,0.97) 0%, rgba(10,10,12,0.97) 100%);
   backdrop-filter: blur(12px);
   border-right: 1px solid var(--border-soft);
-  padding: var(--sp-lg);
+  padding: calc(env(safe-area-inset-top) + var(--sp-lg)) var(--sp-lg)
+           calc(env(safe-area-inset-bottom) + var(--sp-lg));
   display: flex;
   flex-direction: column;
   gap: 4px;
-  position: sticky;
-  top: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: min(300px, 86vw);
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
-  z-index: 10;
+  z-index: 260;
+  transform: translateX(-103%);
+  visibility: hidden;
+  transition: transform 260ms cubic-bezier(.2,.7,.2,1), visibility 0s 260ms;
+  will-change: transform;
+}
+.sidebar.open {
+  transform: none;
+  visibility: visible;
+  transition: transform 260ms cubic-bezier(.2,.7,.2,1), visibility 0s;
+  box-shadow: 24px 0 60px rgba(0,0,0,0.5);
 }
 
 .brand {
@@ -178,10 +192,11 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
 .nav-item {
   text-align: left;
-  padding: 10px 12px;
+  padding: 12px;
+  min-height: 48px; /* touch target iOS/Android */
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -197,7 +212,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .nav-item.active::before {
   content: '';
   position: absolute;
-  left: -24px;
+  left: calc(-1 * var(--sp-lg));
   top: 8px;
   bottom: 8px;
   width: 3px;
@@ -236,10 +251,87 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .main {
-  padding: var(--sp-xl) var(--sp-xl) 120px;
-  max-width: 1560px;
+  padding: calc(56px + env(safe-area-inset-top) + var(--sp-lg)) var(--sp-md)
+           calc(env(safe-area-inset-bottom) + 96px);
+  max-width: 100%;
   width: 100%;
 }
+@media (min-width: 1024px) {
+  .main {
+    padding: calc(56px + env(safe-area-inset-top) + var(--sp-md)) var(--sp-xl) 120px;
+    max-width: 1560px;
+    margin: 0 auto;
+  }
+}
+
+/* ============================================================
+   APP BAR + DRAWER (shell di navigazione mobile-first)
+   z-index: FAB 50 · file-ref-badge 80 · app-bar 90 · modali 100
+            · toast 200 · drawer-backdrop 250 · drawer 260
+   ============================================================ */
+.app-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: calc(56px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 14px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10,10,12,0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  z-index: 90;
+}
+.hamburger {
+  width: 48px;
+  height: 48px; /* touch target ≥48px */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.hamburger span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text-muted);
+  border-radius: 1px;
+  transition: background var(--t-fast);
+}
+.hamburger:hover span { background: var(--text); }
+.app-bar-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-bar-month {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms ease;
+  z-index: 250;
+  touch-action: none;
+}
+.drawer-backdrop.active { opacity: 1; pointer-events: auto; }
+body.drawer-open { overflow: hidden; overscroll-behavior: none; }
 
 /* ============================================================
    TYPOGRAPHY
@@ -255,11 +347,14 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .page-header > div:first-child { flex: 1 1 480px; }
 .page-title {
   font-family: var(--font-display);
-  font-size: 42px;
+  font-size: 30px;
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.05;
   margin-bottom: 6px;
+}
+@media (min-width: 1024px) {
+  .page-title { font-size: 42px; }
 }
 .page-subtitle {
   color: var(--text-muted);
@@ -295,7 +390,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .bento {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-lg);
 }
@@ -309,14 +404,17 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   transition: border-color var(--t-fast), transform var(--t-base);
 }
 .widget:hover { border-color: var(--border); }
-.col-3  { grid-column: span 3; }
-.col-4  { grid-column: span 4; }
-.col-5  { grid-column: span 5; }
-.col-6  { grid-column: span 6; }
-.col-7  { grid-column: span 7; }
-.col-8  { grid-column: span 8; }
-.col-9  { grid-column: span 9; }
-.col-12 { grid-column: span 12; }
+@media (min-width: 1024px) {
+  .bento { grid-template-columns: repeat(12, 1fr); }
+  .col-3  { grid-column: span 3; }
+  .col-4  { grid-column: span 4; }
+  .col-5  { grid-column: span 5; }
+  .col-6  { grid-column: span 6; }
+  .col-7  { grid-column: span 7; }
+  .col-8  { grid-column: span 8; }
+  .col-9  { grid-column: span 9; }
+  .col-12 { grid-column: span 12; }
+}
 
 /* ============================================================
    HERO KPI
@@ -327,10 +425,13 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
     linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
-  padding: 28px 32px;
+  padding: 20px;
   margin-bottom: var(--sp-lg);
   position: relative;
   overflow: hidden;
+}
+@media (min-width: 640px) {
+  .hero { padding: 28px 32px; }
 }
 .hero::after {
   content: '';
@@ -342,9 +443,15 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 .hero-row {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr;
-  gap: 32px;
+  grid-template-columns: 1fr;
+  gap: 20px;
   align-items: center;
+}
+@media (min-width: 640px) {
+  .hero-row {
+    grid-template-columns: 1.5fr 1fr 1fr;
+    gap: 32px;
+  }
 }
 .hero-main .label {
   font-size: 10px;
@@ -424,9 +531,12 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .macros-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-lg);
+}
+@media (min-width: 1024px) {
+  .macros-row { grid-template-columns: repeat(3, 1fr); }
 }
 .macro-card {
   background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
@@ -583,9 +693,12 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .macro-header {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-lg);
+}
+@media (min-width: 1024px) {
+  .macro-header { grid-template-columns: 1.4fr 1fr; }
 }
 .macro-stats {
   display: grid;
@@ -640,13 +753,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .tx-list { list-style: none; }
 .tx-item {
   display: grid;
-  grid-template-columns: 56px 1fr auto;
+  grid-template-columns: 44px 1fr auto;
   gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border-soft);
   font-size: 13px;
   align-items: center;
   transition: padding-left var(--t-fast);
+}
+@media (min-width: 640px) {
+  .tx-item { grid-template-columns: 56px 1fr auto; }
 }
 .tx-item:hover { padding-left: 6px; }
 .tx-item:last-child { border-bottom: none; }
@@ -683,12 +799,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-md);
 }
-.form-row.three { grid-template-columns: 1fr 1fr 1fr; }
 .form-row.full  { grid-template-columns: 1fr; }
+@media (min-width: 640px) {
+  .form-row { grid-template-columns: 1fr 1fr; }
+  .form-row.three { grid-template-columns: 1fr 1fr 1fr; }
+  .form-row.full  { grid-template-columns: 1fr; }
+}
 
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-label {
@@ -872,7 +992,8 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
    ============================================================ */
 .fab {
   position: fixed;
-  bottom: 28px; right: 28px;
+  bottom: calc(env(safe-area-inset-bottom) + 20px);
+  right: 20px;
   width: 60px; height: 60px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -888,6 +1009,9 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 }
 .fab:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 14px 36px rgba(212,162,74,0.5); }
 .fab:active { transform: translateY(-1px) scale(0.98); }
+@media (min-width: 1024px) {
+  .fab { bottom: 28px; right: 28px; }
+}
 
 .quick-add {
   display: flex;
@@ -928,12 +1052,15 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 6px;
   background: var(--bg-elev-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   padding: 4px;
+}
+@media (min-width: 640px) {
+  .segmented { grid-template-columns: repeat(3, 1fr); }
 }
 .segmented button {
   padding: 10px;
@@ -983,8 +1110,11 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 
 .field-row {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
+}
+@media (min-width: 640px) {
+  .field-row { grid-template-columns: 1fr 2fr; }
 }
 
 /* ============================================================
@@ -1114,10 +1244,17 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 
 .scontrino-row {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 110px 36px;
+  grid-template-columns: 1fr 1fr;
   gap: var(--sp-sm);
+  row-gap: 6px;
   align-items: center;
   margin-bottom: 6px;
+}
+@media (min-width: 640px) {
+  .scontrino-row {
+    grid-template-columns: 2fr 1.2fr 110px 36px;
+    row-gap: var(--sp-sm);
+  }
 }
 .scontrino-total {
   display: flex;
@@ -1144,9 +1281,12 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 .heatmap {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 3px;
   font-family: var(--font-mono);
   font-size: 10px;
+}
+@media (min-width: 640px) {
+  .heatmap { gap: 6px; }
 }
 .heatmap .hm-head {
   text-align: center;
@@ -1202,7 +1342,8 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
-body { min-width: 1240px; }
+/* Mobile-first: nessuno scroll orizzontale, mai. */
+html, body { overflow-x: hidden; }
 
 /* ============================================================
    FILE RIFERIMENTO — badge in basso a sinistra
@@ -1210,8 +1351,8 @@ body { min-width: 1240px; }
 .file-ref-badge {
   position: fixed;
   left: 16px;
-  bottom: 16px;
-  z-index: 9999;
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
+  z-index: 80;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1223,7 +1364,7 @@ body { min-width: 1240px; }
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-muted);
-  max-width: 360px;
+  max-width: min(360px, calc(100vw - 32px));
   user-select: none;
 }
 .file-ref-badge .check {
@@ -1258,90 +1399,31 @@ body { min-width: 1240px; }
   letter-spacing: 0.5px;
 }
 
-/* il toast-host viene spostato in alto a sinistra quando c'è il badge */
-.toast-host { bottom: auto; top: 20px; left: 20px; right: auto; }
+/* il toast-host va sotto l'app-bar fissa, in alto a sinistra */
+.toast-host { bottom: auto; top: calc(env(safe-area-inset-top) + 64px); left: 16px; right: auto; }
 
-/* ============================================================
-   RESPONSIVE — iPhone / mobile (layer additivo)
-   ============================================================ */
-@media (max-width: 768px) {
-  /* layout a colonna singola */
-  .app { grid-template-columns: 1fr; }
-
-  /* la sidebar diventa una barra superiore con nav scorrevole */
-  .sidebar {
-    position: sticky;
-    top: 0;
-    height: auto;
-    max-height: none;
-    flex-flow: row wrap;
-    align-items: center;
-    gap: 6px;
-    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
-    border-right: none;
-    border-bottom: 1px solid var(--border-soft);
-    overflow-x: auto;
-  }
-  .brand { flex: 1 1 100%; font-size: 22px; margin: 0; }
-  .brand-sub { flex: 1 1 100%; margin-bottom: 6px; }
-  .sidebar .nav-group-label { display: none; }
-  .nav-item {
-    width: auto;
-    flex: 0 0 auto;
-    padding: 8px 12px;
-    font-size: 13px;
-    min-height: 40px;
-  }
-  /* l'indicatore laterale dell'item attivo non ha senso nella barra orizzontale */
-  .nav-item.active::before { display: none; }
-  .nav-item.active { box-shadow: inset 0 -2px 0 var(--accent); }
-  .sidebar-footer {
-    flex: 1 1 100%;
-    margin-top: 8px;
-    padding-top: 8px;
-  }
-
-  /* area principale: padding ridotto + safe-area per notch/barra Home */
-  .main {
-    padding: var(--sp-lg) var(--sp-md)
-             calc(env(safe-area-inset-bottom) + 96px);
-    max-width: 100%;
-  }
-
-  /* griglie multi-colonna -> impilate */
-  .bento { grid-template-columns: 1fr; }
-  .col-3, .col-4, .col-5, .col-6, .col-7, .col-8, .col-9, .col-12 { grid-column: 1 / -1; }
-  .hero-row,
-  .macros-row,
-  .macro-header,
-  .segmented { grid-template-columns: 1fr; }
-  .form-row,
-  .form-row.three { grid-template-columns: 1fr; }
-
-  /* righe transazioni/scontrino: layout più compatto e touch-friendly */
-  .tx-item { grid-template-columns: 44px 1fr auto; }
-  .scontrino-row { grid-template-columns: 1fr 1fr; row-gap: 6px; }
-
-  /* tabelle larghe: scroll orizzontale invece di rottura layout */
-  .page-title { font-size: 30px; }
-  .page-header { gap: var(--sp-md); }
-
-  /* heatmap calendario resta a 7 colonne ma celle più piccole */
-  .heatmap { gap: 3px; }
-}
-
-@media (max-width: 768px) {
-  /* contenitori con griglie a larghezza fissa: consenti lo scroll orizzontale */
-  .tx-list, .heatmap, .scontrino-table { overflow-x: auto; }
-}
+/* contenitori con griglie a larghezza fissa: consenti lo scroll interno
+   invece di rompere il layout della pagina */
+.tx-list, .heatmap, .scontrino-table { overflow-x: auto; }
 </style>
 </head>
 <body>
 
+<!-- ===== APP BAR ===== -->
+<header class="app-bar">
+  <button class="hamburger" id="btn-drawer-toggle" aria-label="Apri menu"
+          aria-expanded="false" aria-controls="app-drawer">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="app-bar-title">Smart Finance</div>
+  <div class="app-bar-month" id="appbar-month">—</div>
+</header>
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+
 <div class="app">
 
-  <!-- ===== SIDEBAR ===== -->
-  <aside class="sidebar">
+  <!-- ===== NAVIGATION DRAWER ===== -->
+  <aside class="sidebar" id="app-drawer">
     <div class="brand">Smart Finance</div>
     <div class="brand-sub">Tenuta spese</div>
 
@@ -2223,6 +2305,78 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 function vaiA(view) {
   document.querySelector(`.nav-item[data-view="${view}"]`)?.click();
 }
+
+/* ============================================================
+   NAVIGATION DRAWER (solo shell di presentazione:
+   nessuna modifica al routing o alla logica di business)
+   ============================================================ */
+const drawerEl       = document.getElementById('app-drawer');
+const drawerBackdrop = document.getElementById('drawer-backdrop');
+const drawerToggle   = document.getElementById('btn-drawer-toggle');
+
+function isDrawerOpen() { return drawerEl.classList.contains('open'); }
+function apriDrawer() {
+  drawerEl.classList.add('open');
+  drawerBackdrop.classList.add('active');
+  document.body.classList.add('drawer-open');
+  drawerToggle.setAttribute('aria-expanded', 'true');
+}
+function chiudiDrawer() {
+  drawerEl.classList.remove('open');
+  drawerBackdrop.classList.remove('active');
+  document.body.classList.remove('drawer-open');
+  drawerToggle.setAttribute('aria-expanded', 'false');
+}
+
+drawerToggle.addEventListener('click', () => isDrawerOpen() ? chiudiDrawer() : apriDrawer());
+drawerBackdrop.addEventListener('click', chiudiDrawer);
+
+// Chiude il drawer dopo la selezione di una voce di navigazione.
+// Listener aggiuntivo: il routing esistente resta intatto e gira per primo.
+document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', chiudiDrawer));
+
+// Escape chiude il drawer (convive con il listener esistente dei modal).
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && isDrawerOpen()) chiudiDrawer();
+});
+
+// Gesture touch: edge-swipe verso destra per aprire, swipe verso sinistra per chiudere.
+const SWIPE_EDGE   = 24;   // zona dal bordo sinistro (px) per iniziare l'apertura
+const SWIPE_COMMIT = 60;   // spostamento orizzontale minimo (px)
+const SWIPE_RATIO  = 1.5;  // dominanza orizzontale richiesta rispetto alla verticale
+let swipeStart = null;
+
+document.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  if (!isDrawerOpen() && t.clientX <= SWIPE_EDGE) {
+    swipeStart = { x: t.clientX, y: t.clientY, mode: 'open' };
+  } else if (isDrawerOpen()) {
+    swipeStart = { x: t.clientX, y: t.clientY, mode: 'close' };
+  } else {
+    swipeStart = null;
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+  if (!swipeStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipeStart.x;
+  const dy = t.clientY - swipeStart.y;
+  if (Math.abs(dx) >= SWIPE_COMMIT && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO) {
+    if (swipeStart.mode === 'open'  && dx > 0) apriDrawer();
+    if (swipeStart.mode === 'close' && dx < 0) chiudiDrawer();
+  }
+  swipeStart = null;
+}, { passive: true });
+
+// Mese corrente nell'app-bar: specchia #current-month-label (nel drawer)
+// senza toccare i renderer che lo aggiornano.
+const appbarMonthSrc = document.getElementById('current-month-label');
+const appbarMonthDst = document.getElementById('appbar-month');
+const syncAppbarMonth = () => { appbarMonthDst.textContent = appbarMonthSrc.textContent; };
+new MutationObserver(syncAppbarMonth)
+  .observe(appbarMonthSrc, { childList: true, characterData: true, subtree: true });
+syncAppbarMonth();
 
 /* ============================================================
    QUICK ADD (data entry contestuale)

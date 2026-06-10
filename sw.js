@@ -8,7 +8,7 @@
  * Nessun dato utente passa di qui: localStorage resta sul dispositivo.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
 const RUNTIME_CACHE = 'tenuta-runtime-' + CACHE_VERSION;
 
