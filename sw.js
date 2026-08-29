@@ -10,7 +10,7 @@
 
 // Da incrementare ad ogni release insieme a APP_VERSION in index.html:
 // forza l'eliminazione della shell cache precedente (vedi 'activate' sotto).
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
 const RUNTIME_CACHE = 'tenuta-runtime-' + CACHE_VERSION;
 
@@ -28,7 +28,11 @@ const SHELL_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
+      // addAll() passerebbe per la cache HTTP: si precarica esplicitamente
+      // con cache 'reload' per non installare subito una shell già vecchia.
+      .then((cache) => Promise.all(SHELL_ASSETS.map((u) =>
+        fetch(new Request(u, { cache: 'reload' })).then((res) => cache.put(u, res))
+      )))
       .then(() => self.skipWaiting())
   );
 });
@@ -45,6 +49,18 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/**
+ * fetch() che ignora la cache HTTP del browser, con fallback alla fetch
+ * normale se l'opzione non è supportata o la richiesta non la accetta.
+ */
+function fetchSenzaCacheHttp(req) {
+  try {
+    return fetch(new Request(req, { cache: 'reload' }));
+  } catch (_) {
+    return fetch(req);
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
@@ -56,9 +72,14 @@ self.addEventListener('fetch', (event) => {
 
   // Navigazioni / app shell same-origin: network-first con fallback a cache.
   // Così gli aggiornamenti arrivano online, ma offline si serve la copia salvata.
+  //
+  // IMPORTANTE: la fetch va forzata a saltare la cache HTTP del browser
+  // (cache: 'reload'). Senza, GitHub Pages serve index.html con un max-age e
+  // il ramo "network-first" riceve comunque la copia vecchia: l'app resta
+  // ferma a una versione precedente anche con la rete attiva.
   if (sameOrigin) {
     event.respondWith(
-      fetch(req)
+      fetchSenzaCacheHttp(req)
         .then((res) => {
           const copy = res.clone();
           caches.open(SHELL_CACHE).then((cache) => cache.put(req, copy));

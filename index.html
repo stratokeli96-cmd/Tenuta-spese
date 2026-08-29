@@ -1883,6 +1883,10 @@ html, body { overflow-x: hidden; }
           Versione <strong id="app-version-label" style="color: var(--text);"></strong><br />
           <span id="app-version-note" style="font-size: 12px;"></span>
         </p>
+        <button class="btn btn-secondary" id="btn-aggiorna-app">Cerca aggiornamenti</button>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
+          Svuota la cache dell'app e ricarica l'ultima versione pubblicata. I tuoi dati non vengono toccati.
+        </p>
       </div>
     </section>
 
@@ -1980,8 +1984,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.08.29d';
-const APP_BUILD_NOTE = 'Pulsante fotocamera diretto: uno scatto in un tocco';
+const APP_VERSION = '2026.08.29e';
+const APP_BUILD_NOTE = 'Fix aggiornamenti PWA: bypass cache HTTP, reload automatico, pulsante manuale';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -4068,6 +4072,32 @@ function validaEstrazione(result, sommaRighe, atteso) {
   }
 }
 
+/**
+ * Forza il recupero dell'ultima versione pubblicata: svuota le cache del
+ * service worker, ne richiede l'aggiornamento e ricarica saltando la cache
+ * HTTP. I dati utente vivono in localStorage e non vengono toccati.
+ */
+async function forzaAggiornamentoApp() {
+  toast('Ricerca aggiornamenti…', 'info');
+  try {
+    if ('caches' in window) {
+      const chiavi = await caches.keys();
+      await Promise.all(chiavi.map(k => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.update().catch(() => r.unregister())));
+    }
+  } catch (e) {
+    console.warn('Pulizia cache fallita:', e);
+  }
+  // Cache-buster in query string: su iOS il solo reload() può ripescare la
+  // pagina dalla cache HTTP anche dopo aver svuotato quelle del service worker.
+  const url = new URL(window.location.href);
+  url.searchParams.set('v', Date.now().toString(36));
+  window.location.replace(url.toString());
+}
+
 function applicaSconto(riga, importo) {
   riga.sconto = round2((riga.sconto || 0) + importo);
   riga.prezzo = round2(Math.max(0, (riga.prezzoLordo || riga.prezzo) - riga.sconto));
@@ -4933,6 +4963,12 @@ function renderImpostazioni() {
   document.getElementById('app-version-label').textContent = APP_VERSION;
   document.getElementById('app-version-note').textContent = APP_BUILD_NOTE;
 
+  const btnAgg = document.getElementById('btn-aggiorna-app');
+  if (btnAgg && !btnAgg.dataset.bound) {
+    btnAgg.dataset.bound = '1';
+    btnAgg.addEventListener('click', forzaAggiornamentoApp);
+  }
+
   const be = document.getElementById('macro-budget-editor');
   be.innerHTML = `
     <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
@@ -5168,11 +5204,39 @@ renderFileRiferimento();
 </script>
 
 <script>
-/* Registrazione service worker: abilita avvio offline (app shell + CDN in cache). */
+/* Registrazione service worker: abilita avvio offline (app shell + CDN in cache).
+ *
+ * Aggiornamenti: il solo register() non basta. Su iOS, con la PWA avviata
+ * dalla Home, il controllo di aggiornamento è inaffidabile e — anche quando
+ * il nuovo service worker si attiva — la pagina già aperta continua a
+ * eseguire l'HTML vecchio. Servono quindi tre cose:
+ *   1) update() esplicito all'avvio e a ogni ritorno in primo piano;
+ *   2) updateViaCache 'none', perché il browser non serva sw.js dalla cache;
+ *   3) reload one-shot quando il nuovo worker prende il controllo.
+ */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function (err) {
-      console.warn('Service worker non registrato:', err);
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(function (reg) {
+        reg.update().catch(function () {});
+        // Ricontrolla quando l'utente riapre l'app (tipico su telefono:
+        // l'app resta in background per giorni senza mai ricaricare).
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) reg.update().catch(function () {});
+        });
+      })
+      .catch(function (err) {
+        console.warn('Service worker non registrato:', err);
+      });
+
+    // Il nuovo worker chiama skipWaiting()+clients.claim(): quando prende il
+    // controllo ricarichiamo una sola volta per far entrare in scena l'HTML
+    // aggiornato. Il flag evita cicli di reload.
+    var ricaricato = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (ricaricato) return;
+      ricaricato = true;
+      window.location.reload();
     });
   });
 }
