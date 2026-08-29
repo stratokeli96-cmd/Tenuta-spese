@@ -1588,8 +1588,11 @@ html, body { overflow-x: hidden; }
       <div class="widget" style="margin-bottom: var(--sp-lg);">
         <div class="ocr-zone" id="ocr-zone">
           <div class="icon">⤓</div>
-          <div class="title">Trascina qui foto o PDF</div>
-          <div class="sub">oppure <strong style="color:var(--accent); text-decoration: underline;">clicca per selezionare</strong> · JPG/PNG/PDF · solo browser, mai inviato online</div>
+          <div class="title">Scansiona o carica lo scontrino</div>
+          <div class="sub">
+            <strong style="color:var(--accent); text-decoration: underline;">tocca per scegliere</strong> · JPG/PNG/PDF · solo browser, mai inviato online<br />
+            <span style="opacity:.85;">Su iPhone scegli <strong>File → Scansiona documenti</strong>: usa lo scanner di sistema (bordi e prospettiva automatici, più pagine).</span>
+          </div>
           <input type="file" id="ocr-input" accept="image/*,application/pdf" style="display:none;" />
           <div class="ocr-progress" id="ocr-progress">
             <div class="ocr-progress-fill" id="ocr-progress-fill"></div>
@@ -1964,8 +1967,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.08.29b';
-const APP_BUILD_NOTE = 'Parser OCR riscritto: importi flessibili, checkpoint di validazione, errori espliciti';
+const APP_VERSION = '2026.08.29c';
+const APP_BUILD_NOTE = 'Scanner documenti iOS: OCR multi-pagina su tutte le pagine del PDF';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3274,54 +3277,37 @@ async function gestisciFileOCR(file) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
     }
 
-    let imageDataUrl;
-    if (file.type === 'application/pdf') {
-      ocrStatus.textContent = 'Rendering PDF…';
-      imageDataUrl = await renderPdfFirstPage(file);
-    } else {
-      imageDataUrl = await fileToDataUrl(file);
-    }
-
-    ocrStatus.textContent = 'Pre-processing immagine…';
-    const varianti = await preprocessReceiptImage(imageDataUrl);
-
     if (typeof Tesseract === 'undefined') {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
 
-    // Tentativi in cascata: se il primo non estrae voci si riprova con una
-    // preparazione diversa dell'immagine e una segmentazione di pagina
-    // alternativa. Su foto da smartphone è la differenza fra "zero voci" e
-    // un'estrazione completa, quindi vale il tempo extra.
-    const tentativi = [
-      { url: varianti.binarizzata, psm: 6, nome: 'binarizzata' },
-      { url: varianti.contrasto,   psm: 6, nome: 'contrasto' },
-      { url: varianti.contrasto,   psm: 4, nome: 'contrasto/colonna' }
-    ];
-
-    let parsed = null;
-    let testoMigliore = '';
-    for (let t = 0; t < tentativi.length; t++) {
-      const tent = tentativi[t];
-      const etichetta = tentativi.length > 1 && t > 0 ? ` (tentativo ${t + 1})` : '';
-      ocrStatus.textContent = 'OCR in corso…' + etichetta;
-      ocrProgressFill.style.width = '0%';
-
-      const text = await runTesseract(tent.url, pct => {
-        ocrProgressFill.style.width = pct + '%';
-        ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%' + etichetta;
-      }, tent.psm);
-
-      const candidato = parseScontrino(text || '');
-      // Tiene il tentativo con più voci estratte.
-      if (!parsed || candidato.righe.length > parsed.righe.length) {
-        parsed = candidato;
-        testoMigliore = text || '';
-      }
-      if (parsed.righe.length > 0 && !parsed.errori.length) break;
+    // Lo scanner documenti nativo di iOS (File → "Scansiona documenti", cioè
+    // VNDocumentCameraViewController: bordi automatici, correzione prospettiva)
+    // consegna un PDF con UNA PAGINA PER SCATTO. Vanno quindi processate tutte
+    // le pagine, non solo la prima, altrimenti di uno scontrino lungo scansionato
+    // in più riprese si perde tutto tranne il primo pezzo.
+    let pagine;
+    if (file.type === 'application/pdf') {
+      ocrStatus.textContent = 'Rendering PDF…';
+      pagine = await renderPdfPages(file);
+    } else {
+      pagine = [await fileToDataUrl(file)];
     }
 
-    ocrText = testoMigliore;
+    const testiPagina = [];
+    for (let p = 0; p < pagine.length; p++) {
+      const etichettaPag = pagine.length > 1 ? ` · pagina ${p + 1}/${pagine.length}` : '';
+      ocrStatus.textContent = 'Pre-processing immagine…' + etichettaPag;
+      const varianti = await preprocessReceiptImage(pagine[p]);
+      testiPagina.push(await ocrPaginaConRitentativi(varianti, etichettaPag));
+    }
+
+    // Le pagine si concatenano PRIMA del parsing: il TOTALE sta sull'ultima,
+    // le voci sulle precedenti, e i checkpoint di coerenza devono vederli insieme.
+    const testoCompleto = testiPagina.filter(Boolean).join('\n');
+    const parsed = parseScontrino(testoCompleto);
+
+    ocrText = testoCompleto;
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
@@ -3623,20 +3609,67 @@ function fileToDataUrl(file) {
   });
 }
 
-async function renderPdfFirstPage(file) {
+/**
+ * OCR di UNA pagina con ritentativi in cascata: se una preparazione non
+ * estrae voci si riprova con un'altra variante dell'immagine e una
+ * segmentazione di pagina diversa. Su foto da smartphone è la differenza
+ * fra "zero voci" e un'estrazione completa, quindi vale il tempo extra.
+ * Ritorna il testo del tentativo che ha prodotto più voci.
+ */
+async function ocrPaginaConRitentativi(varianti, etichettaPag) {
+  const tentativi = [
+    { url: varianti.binarizzata, psm: 6 },
+    { url: varianti.contrasto,   psm: 6 },
+    { url: varianti.contrasto,   psm: 4 }
+  ];
+
+  let testoMigliore = '';
+  let vociMigliori = -1;
+  for (let t = 0; t < tentativi.length; t++) {
+    const etichetta = (etichettaPag || '') + (t > 0 ? ` (tentativo ${t + 1})` : '');
+    ocrStatus.textContent = 'OCR in corso…' + etichetta;
+    ocrProgressFill.style.width = '0%';
+
+    const text = await runTesseract(tentativi[t].url, pct => {
+      ocrProgressFill.style.width = pct + '%';
+      ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%' + etichetta;
+    }, tentativi[t].psm);
+
+    const candidato = parseScontrino(text || '');
+    if (candidato.righe.length > vociMigliori) {
+      vociMigliori = candidato.righe.length;
+      testoMigliore = text || '';
+    }
+    if (vociMigliori > 0 && !candidato.errori.length) break;
+  }
+  return testoMigliore;
+}
+
+/**
+ * Renderizza TUTTE le pagine di un PDF in dataURL PNG. Serve per l'output
+ * dello scanner documenti nativo iOS, che produce una pagina per scatto.
+ * Cap prudenziale: l'OCR di ogni pagina costa secondi su telefono.
+ */
+async function renderPdfPages(file, maxPagine = 8) {
   if (typeof pdfjsLib === 'undefined') {
     throw new Error('pdf.js non caricato');
   }
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 2 });
-  const canvas = document.createElement('canvas');
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-  return canvas.toDataURL('image/png');
+  const n = Math.min(pdf.numPages, maxPagine);
+  const out = [];
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    out.push(canvas.toDataURL('image/png'));
+  }
+  if (!out.length) throw new Error('PDF senza pagine leggibili.');
+  return out;
 }
 
 /* ============================================================
