@@ -1601,16 +1601,19 @@ html, body { overflow-x: hidden; }
 
         <!-- Scorciatoia: `capture` apre la fotocamera in un solo tocco, senza
              passare dal menu di scelta file. Input separato dal principale,
-             che deve restare senza `capture` per poter raggiungere File e
-             quindi lo scanner documenti di sistema. -->
+             che deve restare senza `capture` per poter raggiungere i file
+             gia' salvati sul dispositivo. -->
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top: var(--sp-md);">
           <button class="btn btn-primary" id="btn-scatta-foto">📷 Scatta foto</button>
-          <button class="btn btn-secondary" id="btn-scegli-file">Scegli file o scansiona</button>
+          <button class="btn btn-secondary" id="btn-scegli-file">Scegli file</button>
         </div>
         <input type="file" id="ocr-input-camera" accept="image/*" capture="environment" style="display:none;" />
         <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
-          Per scontrini lunghi o storti conviene <strong>Scegli file → File → Scansiona documenti</strong>:
-          usa lo scanner di sistema, che raddrizza i bordi e permette più pagine.
+          Di norma usa <strong>Scatta foto</strong>. Per scontrini molto lunghi o quando la foto
+          non viene letta bene: scansionalo prima con l'app <strong>File</strong>
+          (⋯ in alto a destra → Scansiona documenti) o con <strong>Note</strong>, salvalo,
+          poi caricalo qui con <strong>Scegli file</strong>. Il selettore file di Safari non
+          contiene il comando di scansione: va fatta prima.
         </p>
 
         <div class="ocr-preview" id="ocr-preview">
@@ -1984,8 +1987,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.08.29e';
-const APP_BUILD_NOTE = 'Fix aggiornamenti PWA: bypass cache HTTP, reload automatico, pulsante manuale';
+const APP_VERSION = '2026.08.29f';
+const APP_BUILD_NOTE = 'Istruzioni scansione corrette: va fatta prima dall\'app File, non dal selettore';
 
 /* ============================================================
    STATO + MIGRAZIONE
