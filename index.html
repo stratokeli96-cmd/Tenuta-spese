@@ -1590,8 +1590,7 @@ html, body { overflow-x: hidden; }
           <div class="icon">⤓</div>
           <div class="title">Scansiona o carica lo scontrino</div>
           <div class="sub">
-            <strong style="color:var(--accent); text-decoration: underline;">tocca per scegliere</strong> · JPG/PNG/PDF · solo browser, mai inviato online<br />
-            <span style="opacity:.85;">Su iPhone scegli <strong>File → Scansiona documenti</strong>: usa lo scanner di sistema (bordi e prospettiva automatici, più pagine).</span>
+            Trascina qui, oppure <strong style="color:var(--accent); text-decoration: underline;">tocca per scegliere</strong> · JPG/PNG/PDF · solo browser, mai inviato online
           </div>
           <input type="file" id="ocr-input" accept="image/*,application/pdf" style="display:none;" />
           <div class="ocr-progress" id="ocr-progress">
@@ -1599,6 +1598,20 @@ html, body { overflow-x: hidden; }
           </div>
           <div class="ocr-status" id="ocr-status"></div>
         </div>
+
+        <!-- Scorciatoia: `capture` apre la fotocamera in un solo tocco, senza
+             passare dal menu di scelta file. Input separato dal principale,
+             che deve restare senza `capture` per poter raggiungere File e
+             quindi lo scanner documenti di sistema. -->
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top: var(--sp-md);">
+          <button class="btn btn-primary" id="btn-scatta-foto">📷 Scatta foto</button>
+          <button class="btn btn-secondary" id="btn-scegli-file">Scegli file o scansiona</button>
+        </div>
+        <input type="file" id="ocr-input-camera" accept="image/*" capture="environment" style="display:none;" />
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
+          Per scontrini lunghi o storti conviene <strong>Scegli file → File → Scansiona documenti</strong>:
+          usa lo scanner di sistema, che raddrizza i bordi e permette più pagine.
+        </p>
 
         <div class="ocr-preview" id="ocr-preview">
           <div class="section-title" style="margin-top: var(--sp-lg);">
@@ -1967,8 +1980,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.08.29c';
-const APP_BUILD_NOTE = 'Scanner documenti iOS: OCR multi-pagina su tutte le pagine del PDF';
+const APP_VERSION = '2026.08.29d';
+const APP_BUILD_NOTE = 'Pulsante fotocamera diretto: uno scatto in un tocco';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3260,9 +3273,22 @@ ocrZone.addEventListener('drop', e => {
   ocrZone.classList.remove('drag');
   if (e.dataTransfer.files.length) gestisciFileOCR(e.dataTransfer.files[0]);
 });
-ocrInput.addEventListener('change', e => {
-  if (e.target.files.length) gestisciFileOCR(e.target.files[0]);
-});
+// Il valore dell'input va azzerato dopo l'uso: altrimenti riselezionare lo
+// stesso file non emette un nuovo evento 'change' e sembra che l'app ignori
+// il tocco (tipico dopo un tentativo andato male che si vuole ripetere).
+function gestisciSelezioneFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (file) gestisciFileOCR(file);
+}
+
+ocrInput.addEventListener('change', gestisciSelezioneFile);
+
+// Scorciatoia fotocamera (un tocco) e accesso esplicito a file/scanner.
+const ocrInputCamera = document.getElementById('ocr-input-camera');
+document.getElementById('btn-scatta-foto').addEventListener('click', () => ocrInputCamera.click());
+document.getElementById('btn-scegli-file').addEventListener('click', () => ocrInput.click());
+ocrInputCamera.addEventListener('change', gestisciSelezioneFile);
 
 async function gestisciFileOCR(file) {
   ocrPreview.classList.remove('active');
