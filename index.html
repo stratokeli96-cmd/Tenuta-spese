@@ -1603,6 +1603,18 @@ html, body { overflow-x: hidden; }
             <span class="section-meta">verifica e correggi prima di registrare</span>
           </div>
 
+          <!-- Esito dei checkpoint di validazione: errori bloccanti e avvisi. -->
+          <div id="ocr-alerts"></div>
+
+          <!-- Fallback: testo grezzo riconosciuto, per inserimento manuale
+               quando il parsing non riesce a strutturare le voci. -->
+          <details id="ocr-raw-wrap" style="display:none; margin-bottom: var(--sp-md);">
+            <summary style="cursor:pointer; color: var(--text-muted); font-size: 12px;">
+              Mostra il testo grezzo letto dall'OCR
+            </summary>
+            <pre id="ocr-raw" style="white-space:pre-wrap; word-break:break-word; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,.25); padding: 10px; border-radius: 8px; max-height: 240px; overflow:auto; margin-top: 8px;"></pre>
+          </details>
+
           <div class="form-row three">
             <div class="form-group">
               <label class="form-label">Data scontrino</label>
@@ -1952,8 +1964,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.08.29';
-const APP_BUILD_NOTE = 'OCR scontrini rafforzato (deskew, binarizzazione adattiva, sconti a piè di lista)';
+const APP_VERSION = '2026.08.29b';
+const APP_BUILD_NOTE = 'Parser OCR riscritto: importi flessibili, checkpoint di validazione, errori espliciti';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3224,6 +3236,9 @@ document.getElementById('btn-reset-scontrino').addEventListener('click', () => {
   aggiungiRigaScontrino();
   aggiornaTotaleScontrino();
   ocrText = '';
+  document.getElementById('ocr-alerts').innerHTML = '';
+  document.getElementById('ocr-raw').textContent = '';
+  document.getElementById('ocr-raw-wrap').style.display = 'none';
 });
 
 // --- Drag & drop / file input ---
@@ -3268,53 +3283,95 @@ async function gestisciFileOCR(file) {
     }
 
     ocrStatus.textContent = 'Pre-processing immagine…';
-    const processedDataUrl = await preprocessReceiptImage(imageDataUrl);
+    const varianti = await preprocessReceiptImage(imageDataUrl);
 
     if (typeof Tesseract === 'undefined') {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
 
-    ocrStatus.textContent = 'OCR in corso…';
-    const text = await runTesseract(processedDataUrl, pct => {
-      ocrProgressFill.style.width = pct + '%';
-      ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%';
-    });
+    // Tentativi in cascata: se il primo non estrae voci si riprova con una
+    // preparazione diversa dell'immagine e una segmentazione di pagina
+    // alternativa. Su foto da smartphone è la differenza fra "zero voci" e
+    // un'estrazione completa, quindi vale il tempo extra.
+    const tentativi = [
+      { url: varianti.binarizzata, psm: 6, nome: 'binarizzata' },
+      { url: varianti.contrasto,   psm: 6, nome: 'contrasto' },
+      { url: varianti.contrasto,   psm: 4, nome: 'contrasto/colonna' }
+    ];
 
-    ocrText = text || '';
+    let parsed = null;
+    let testoMigliore = '';
+    for (let t = 0; t < tentativi.length; t++) {
+      const tent = tentativi[t];
+      const etichetta = tentativi.length > 1 && t > 0 ? ` (tentativo ${t + 1})` : '';
+      ocrStatus.textContent = 'OCR in corso…' + etichetta;
+      ocrProgressFill.style.width = '0%';
+
+      const text = await runTesseract(tent.url, pct => {
+        ocrProgressFill.style.width = pct + '%';
+        ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%' + etichetta;
+      }, tent.psm);
+
+      const candidato = parseScontrino(text || '');
+      // Tiene il tentativo con più voci estratte.
+      if (!parsed || candidato.righe.length > parsed.righe.length) {
+        parsed = candidato;
+        testoMigliore = text || '';
+      }
+      if (parsed.righe.length > 0 && !parsed.errori.length) break;
+    }
+
+    ocrText = testoMigliore;
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
-    const parsed = parseScontrino(ocrText);
     popolaPreviewDaParser(parsed);
-
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
 
-    const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
-    const daVerificare = parsed.righeDaVerificare || 0;
-    let msg = `OCR completato: ${parsed.righe.length} righe estratte`;
-    if (conSconto) msg += `, ${conSconto} con sconto applicato`;
-    if (daVerificare) msg += `, ${daVerificare} da verificare (bassa confidenza)`;
-    toast(msg, daVerificare ? 'warning' : 'success');
+    // Riepilogo esplicito: mai un esito silenzioso.
+    if (parsed.errori.length) {
+      toast(parsed.errori[0], 'danger', 8000);
+    } else {
+      const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
+      const daVerificare = parsed.righeDaVerificare || 0;
+      let msg = `OCR completato: ${parsed.righe.length} voci estratte`;
+      if (conSconto) msg += `, ${conSconto} con sconto`;
+      if (daVerificare) msg += `, ${daVerificare} da verificare`;
+      toast(msg, daVerificare || parsed.avvisi.length ? 'warning' : 'success');
+    }
   } catch (e) {
     console.error(e);
     ocrStatus.textContent = '';
     ocrProgress.classList.remove('active');
-    toast('OCR fallito: ' + e.message, 'danger', 5000);
     ocrPreview.classList.add('active');
+    // Anche in caso di eccezione l'utente vede il motivo nel riquadro, non
+    // solo in un toast che scompare.
+    mostraEsitoOCR({ righe: [], errori: ['OCR fallito: ' + e.message], avvisi: [], totale: 0 });
+    toast('OCR fallito: ' + e.message, 'danger', 6000);
   }
 }
 
 /**
- * Pre-processing per migliorare la leggibilità OCR di foto da smartphone:
- * upscale a ~2000px lato lungo → deskew (stima angolo su proiezione
- * orizzontale) → grayscale + contrasto lineare attorno alla media →
- * binarizzazione adattiva (Bradley/Wellner via integral image, soglia
- * = media locale). Restituisce un dataURL PNG. Se un passaggio fallisce,
- * degrada silenziosamente al risultato del passaggio precedente.
+ * Pre-processing per foto da smartphone. Produce DUE varianti della stessa
+ * immagine, così che l'OCR possa ritentare se la prima non produce voci:
+ *
+ *   binarizzata → upscale ~2000px → deskew → grayscale+contrasto →
+ *                 binarizzazione adattiva (Bradley/Wellner, soglia locale)
+ *   contrasto   → stessa pipeline SENZA binarizzazione
+ *
+ * La binarizzazione aiuta molto su foto con ombre/illuminazione irregolare,
+ * ma può distruggere il testo su scontrini sbiaditi o sovraesposti: per
+ * questo viene scartata automaticamente se il risultato è degenere (quasi
+ * tutto bianco o quasi tutto nero) e resta comunque disponibile la variante
+ * a solo contrasto come fallback.
+ *
+ * Ritorna { binarizzata, contrasto, originale } (dataURL PNG). Ogni step che
+ * fallisce degrada silenziosamente al risultato dello step precedente.
  */
 async function preprocessReceiptImage(dataUrl) {
   return new Promise((resolve) => {
+    const fallback = { binarizzata: dataUrl, contrasto: dataUrl, originale: dataUrl };
     const img = new Image();
     img.onload = () => {
       try {
@@ -3361,23 +3418,45 @@ async function preprocessReceiptImage(dataUrl) {
           d[i] = d[i + 1] = d[i + 2] = v;
         }
 
-        // --- binarizzazione adattiva (soglia = media locale) ---
+        ctx.putImageData(imgData, 0, 0);
+        const contrastoUrl = canvas.toDataURL('image/png');
+
+        // --- binarizzazione adattiva su una copia dei pixel ---
+        let binarizzataUrl = contrastoUrl;
         try {
-          adaptiveBinarizeInPlace(imgData, canvas.width, canvas.height);
+          const binData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          adaptiveBinarizeInPlace(binData, canvas.width, canvas.height);
+          // Guardia anti-degenerazione: se l'inchiostro è quasi assente o
+          // copre quasi tutto, la binarizzazione ha distrutto il testo.
+          const inkRatio = misuraInchiostro(binData);
+          if (inkRatio >= 0.005 && inkRatio <= 0.45) {
+            ctx.putImageData(binData, 0, 0);
+            binarizzataUrl = canvas.toDataURL('image/png');
+          } else {
+            console.warn('Binarizzazione degenere (ink ratio ' + inkRatio.toFixed(3) + '), uso solo contrasto.');
+          }
         } catch (err) {
           console.warn('Binarizzazione adattiva fallita, uso solo contrasto:', err);
         }
 
-        ctx.putImageData(imgData, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
+        resolve({ binarizzata: binarizzataUrl, contrasto: contrastoUrl, originale: dataUrl });
       } catch (err) {
         console.warn('Pre-processing fallito, uso immagine originale:', err);
-        resolve(dataUrl);
+        resolve(fallback);
       }
     };
-    img.onerror = () => resolve(dataUrl);
+    img.onerror = () => resolve(fallback);
     img.src = dataUrl;
   });
+}
+
+/** Frazione di pixel "inchiostro" (scuri) su un ImageData binarizzato. */
+function misuraInchiostro(imgData) {
+  const d = imgData.data;
+  let ink = 0;
+  const tot = d.length / 4;
+  for (let i = 0; i < d.length; i += 4) if (d[i] < 128) ink++;
+  return tot ? ink / tot : 0;
 }
 
 /**
@@ -3499,7 +3578,7 @@ function adaptiveBinarizeInPlace(imgData, w, h) {
  * preserve_interword_spaces (cruciali per mantenere allineate le colonne
  * "descrizione" + "EURO" dello scontrino).
  */
-async function runTesseract(dataUrl, onProgress) {
+async function runTesseract(dataUrl, onProgress, psm) {
   // Tesseract v5: createWorker è async e accetta direttamente la lingua
   let worker;
   try {
@@ -3511,7 +3590,9 @@ async function runTesseract(dataUrl, onProgress) {
       }
     });
     await worker.setParameters({
-      tessedit_pageseg_mode: '6',          // assume a single uniform block of text (scontrino in colonna)
+      // 6 = blocco uniforme di testo (scontrino in colonna); 4 = colonna di
+      // testo a larghezza variabile, spesso migliore su foto storte/curve.
+      tessedit_pageseg_mode: String(psm || 6),
       preserve_interword_spaces: '1',
       user_defined_dpi: '300'
     });
@@ -3558,39 +3639,159 @@ async function renderPdfFirstPage(file) {
   return canvas.toDataURL('image/png');
 }
 
+/* ============================================================
+   PARSER SCONTRINO — testo libero, nessun layout fisso
+   ============================================================
+   Lo scontrino fotografato non ha coordinate né template: l'unica
+   struttura affidabile è "descrizione a sinistra, importo a destra".
+   Il parser quindi NON assume posizioni fisse, ma per ogni riga:
+
+     1) normalizza il testo (spazi unicode, valuta, rumore OCR);
+     2) individua TUTTI i token monetari della riga e prende il più a
+        destra come importo di riga (colonna prezzo);
+     3) classifica la riga per contesto (totale / sconto di riga /
+        sconto globale / quantità / intestazione / rumore / prodotto);
+     4) ricuce i nomi prodotto andati a capo (riga senza importo
+        seguita da riga con solo importo);
+     5) assegna a ogni voce una confidence e la marca per revisione.
+
+   Ritorna sempre un oggetto con `errori` e `avvisi` popolati dai
+   checkpoint di validazione: il chiamante non deve mai proseguire in
+   silenzio quando l'estrazione fallisce.
+   ============================================================ */
+
+/** Normalizza cifre confuse dall'OCR (solo dentro token numerici). */
+function normalizzaCifreOCR(tok) {
+  return tok
+    .replace(/[OoQ]/g, '0')
+    .replace(/[IlL|!\[\]]/g, '1')
+    .replace(/[Ss]/g, '5')
+    .replace(/[Bb]/g, '8')
+    .replace(/[Zz]/g, '2')
+    .replace(/[Gg]/g, '6')
+    .replace(/[Tt]/g, '7');
+}
+
 /**
- * Parser scontrino — struttura "tipo Esselunga / Coop / Conad":
- *   <prodotto>  [codice IVA *a/*b/*c/*d]   <prezzo>
- *   [SCONTO ...                              <importo>-S]
- *   ...
- *   TOTALE EURO                              <totale>
+ * Normalizza una riga OCR: spazi unicode, simboli di valuta, separatori
+ * decimali esotici, rumore ai bordi. NON tocca le lettere del nome.
+ */
+function normalizzaRigaOCR(riga) {
+  return String(riga)
+    .replace(/[     \t]/g, ' ')  // spazi unicode → spazio
+    .replace(/[‐-―−]/g, '-')               // trattini tipografici → '-'
+    .replace(/[‘’‛]/g, "'")
+    .replace(/[€£]|\bEUR\b/gi, ' ')                        // valuta: irrilevante per il valore
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Trova tutti gli importi in una riga, in ordine di apparizione.
+ * Tre passate, dalla più affidabile alla più permissiva; si usa la prima
+ * che produce risultati, così il fuzzy non inquina righe già pulite.
  *
- * Strategia:
- *  1) Normalizza il testo (spazi, OCR-noise, marker IVA "*a").
- *  2) Per ogni riga estrae il prezzo finale (numero con virgola/punto e 2 decimali).
- *  3) Le righe SCONTO / BUONO / coupon vengono sottratte dal prodotto precedente.
- *     prezzo_finale = prezzo_lordo − somma(sconti).
- *  4) TOTALE viene usato come check (e fallback se manca).
+ * Ritorna [{ start, end, value, negativo, fuzzy }].
+ */
+function trovaImporti(riga) {
+  const out = [];
+
+  // Passata 1 — token pulito: 1-4 cifre, separatore, 2 decimali.
+  const strict = /(-)?\s*(\d{1,4})\s*[.,]\s*(\d{2})(?!\d)/g;
+  let m;
+  while ((m = strict.exec(riga)) !== null) {
+    out.push({
+      start: m.index, end: strict.lastIndex,
+      value: parseFloat(m[2] + '.' + m[3]),
+      negativo: m[1] === '-', fuzzy: false
+    });
+  }
+  if (out.length) return out;
+
+  // Passata 2 — cifre confuse dall'OCR (O→0, I/l→1, S→5, B→8…).
+  // Richiede almeno una cifra vera nel token per limitare i falsi positivi
+  // su parole tutte-lettere (es. "ESS.SL" non deve diventare un importo).
+  const fuzzy = /(-)?\s*([\dOoQIlL|!\[\]SsBbZzGgTt]{1,4})\s*[.,;:]\s*([\dOoQIlL|!\[\]SsBbZzGgTt]{2})(?![\dOoQIlL|!SsBbZzGgTt])/g;
+  while ((m = fuzzy.exec(riga)) !== null) {
+    const intero = normalizzaCifreOCR(m[2]);
+    const dec = normalizzaCifreOCR(m[3]);
+    if (!/\d/.test(m[2] + m[3])) continue;         // nessuna cifra vera → scarta
+    const value = parseFloat(intero + '.' + dec);
+    if (isNaN(value)) continue;
+    out.push({ start: m.index, end: fuzzy.lastIndex, value, negativo: m[1] === '-', fuzzy: true });
+  }
+  if (out.length) return out;
+
+  // Passata 3 — separatore decimale perso del tutto ("1 98" invece di "1,98").
+  const spaced = /(-)?\s*(\d{1,4})\s(\d{2})(?!\d)/g;
+  while ((m = spaced.exec(riga)) !== null) {
+    out.push({
+      start: m.index, end: spaced.lastIndex,
+      value: parseFloat(m[2] + '.' + m[3]),
+      negativo: m[1] === '-', fuzzy: true
+    });
+  }
+  return out;
+}
+
+/* --- Pattern di classificazione riga (case-insensitive su testo upper) --- */
+
+// Marker IVA in mezzo/fine riga: "*a".."*d", talvolta senza asterisco.
+const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
+
+// Rumore strutturale dello scontrino: mai un prodotto.
+const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|DI\s+CUI\s+IVA|RESTO|CONTANT|CARTA\b|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO\s+COMMERC|DOCUMENTO|DI\s+VENDITA|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*I(VA)?[.:]|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI\b|SALDO\s+PUNTI|BARCODE|GRAZIE\b|ARRIVEDERCI|CODICE|TICKET\b|EAN\b|VIA\s|V\.LE|CORSO\s|PIAZZA\s|VIALE\s|LOC\.|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|MAESTRO\b|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT|TEL\.|WWW\.|HTTP)/i;
+
+// Riga del totale finale. Niente "TOTAL" nudo: è prefisso di marca reale
+// (es. "TOTAL VASO 2 450G", yogurt Total).
+const TOTAL_RE = /^(TOTALE\s+EURO|TOTALE\s+COMPLESSIVO|TOT\.?\s*EURO|TOT\s+VENDITA|TOTALE\s+DA\s+PAGARE|TOTALE\b\s*$|TOTALE\s+\d)/i;
+
+// Sconto legato al prodotto precedente (riga immediatamente sopra).
+const SCONTO_RIGA_RE = /^(SCONTO\b|SCONT\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|CARTA\s+FEDELT|FEDELTA|PROMO\b|PROMOZIONE\b|OFFERTA\b|\d+\s*%\s*SCONT)/i;
+
+// Buoni/coupon: valgono sull'intero scontrino, ovunque compaiano.
+const SCONTO_GLOBALE_RE = /^(BUONO\s+SPESA|BUONO\b|COUPON\b|VOUCHER\b|GIFT\s*CARD|SCONTO\s+TOTALE|SCONTO\s+SPESA)/i;
+
+// Intestazione di colonna.
+const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO|PREZZO\s*$)/i;
+
+// Riga quantità/peso: "2 X 1,49", "0,530 KG X 2,99".
+const QTA_RE = /^\d+([.,]\d+)?\s*(KG|G|GR|LT|L|PZ|X)\b|^\d+([.,]\d+)?\s*[xX]\s*\d/i;
+
+// Sequenza numerica lunga isolata: barcode / codice articolo / P.IVA.
+const BARCODE_RE = /^[\d\s]{8,}$/;
+
+/**
+ * Parser principale. `txt` è il testo grezzo restituito da Tesseract.
+ * Ritorna { negozio, localita, data, totale, totaleRiportato, righe,
+ *           scontoComplessivo, righeDaVerificare, errori, avvisi, diagnostica }.
  */
 function parseScontrino(txt) {
-  const rawLines = txt.replace(/ /g, ' ').split(/\r?\n/);
-  // Pulisci e mantieni anche la versione "originale" della riga per estrarre il nome
-  const lines = rawLines.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-
   const result = {
-    negozio: '', localita: '', data: '', totale: 0,
-    righe: [], scontoComplessivo: 0, righeDaVerificare: 0, avvisi: []
+    negozio: '', localita: '', data: '', totale: 0, totaleRiportato: null,
+    righe: [], scontoComplessivo: 0, righeDaVerificare: 0,
+    errori: [], avvisi: [],
+    diagnostica: { righeTotali: 0, righeConImporto: 0, righeScartate: 0, testoUtile: 0 }
   };
 
+  const testo = String(txt || '');
+  const lines = testo.split(/\r?\n/).map(normalizzaRigaOCR).filter(Boolean);
+  result.diagnostica.righeTotali = lines.length;
+  result.diagnostica.testoUtile = testo.replace(/\s/g, '').length;
+
+  // ---------- Checkpoint 0: l'OCR ha letto qualcosa? ----------
+  if (result.diagnostica.testoUtile < 20 || lines.length < 3) {
+    result.errori.push('L\'OCR non ha letto testo utile dall\'immagine (foto sfocata, troppo scura o inquadratura parziale). Riprova con una foto più nitida, ben illuminata e con lo scontrino ben in piano.');
+    return result;
+  }
+
   // ---------- Negozio ----------
-  // Cerca nelle prime 8 righe non vuote: preferisce "S.P.A." / "S.R.L." / "SUPERMERCATO"
   for (const l of lines.slice(0, 10)) {
-    if (/S\.?\s*P\.?\s*A\.?|S\.?\s*R\.?\s*L\.?|SUPERMERCAT|IPERMERCAT|DISCOUNT|CONAD|ESSELUNGA|COOP\b|LIDL|EUROSPIN|CARREFOUR|PAM\b|PENNY|TIGRE|DESPAR/i.test(l)) {
+    if (/S\.?\s*P\.?\s*A\.?|S\.?\s*R\.?\s*L\.?|SUPERMERCAT|IPERMERCAT|DISCOUNT|CONAD|ESSELUNGA|COOP\b|LIDL|EUROSPIN|CARREFOUR|PAM\b|PENNY|TIGRE|DESPAR|BENNET|IPERAL|MD\b|TODIS|CRAI\b/i.test(l)) {
       result.negozio = capitalize(l.replace(/[*]+/g, '').trim());
       break;
     }
   }
-  // Fallback: prima riga "MAIUSCOLA" plausibile
   if (!result.negozio) {
     for (const l of lines.slice(0, 8)) {
       if (l.length >= 4 && l.length <= 40 &&
@@ -3604,187 +3805,208 @@ function parseScontrino(txt) {
 
   // ---------- Data ----------
   for (const l of lines) {
-    const md = l.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{2,4})/);
+    const md = l.match(/(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})/);
     if (md) {
       let [, dd, mm, yy] = md;
       if (yy.length === 2) yy = (parseInt(yy, 10) > 50 ? '19' : '20') + yy;
-      const iso = `${yy}-${mm}-${dd}`;
-      if (!isNaN(new Date(iso).getTime())) { result.data = iso; break; }
+      const g = parseInt(dd, 10), me = parseInt(mm, 10);
+      if (g >= 1 && g <= 31 && me >= 1 && me <= 12) {
+        const iso = `${yy}-${mm}-${dd}`;
+        if (!isNaN(new Date(iso).getTime())) { result.data = iso; break; }
+      }
     }
   }
 
-  // ---------- Regex ----------
-  // Prezzo a fine riga: opz. segno '-', cifre, virgola/punto, 2 decimali,
-  // opz. trattino finale e/o lettera "S" (suffisso "-S" tipico di sconti Esselunga).
-  const PRICE_RE_STRICT = /(-?\d{1,4}[.,]\d{2})\s*(-)?\s*([A-Z])?\s*$/;
-  // Variante "tollerante": accetta cifre confuse dall'OCR (O/o↔0, I/l/|↔1, S/s↔5)
-  // dentro il token numerico — usata solo se il match rigoroso fallisce.
-  const PRICE_RE_LOOSE = /(-?[0-9OoIl|Ss]{1,4}[.,][0-9OoIl|Ss]{2})\s*(-)?\s*([A-Z])?\s*$/;
-  // Marker IVA in mezzo alla riga: "*a", "*b", "*c", "*d" — vanno tolti prima del match prezzo
-  const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
-
-  // Righe da ignorare totalmente
-  const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|RESTO|CONTANTI|CONTANTE|CARTA\b|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*IVA\b|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE\b|CODICE|TICKET\b|EAN\b|VIA\s|CORSO\s|PIAZZA\s|VIALE\s|DI\s+CUI\s+IVA|ARRIVEDERCI|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT)/i;
-
-  // Riga del totale finale. NB: niente "TOTAL" nudo come alternativa — è un
-  // prefisso di marca reale (es. "TOTAL VASO 2 450G", yogurt Total) che
-  // andrebbe scambiato per la riga di totale dello scontrino.
-  const TOTAL_RE = /^(TOTALE\s+EURO|TOT\.?\s*EURO|TOTALE\s+COMPLESSIVO|TOT\s+VENDITA|TOTALE\s*$)/i;
-
-  // Sconto legato al prodotto precedente (es. "SCONTO FIDATY 40%"): riga
-  // di sconto sempre di TIPO RIGA, indipendentemente dalla posizione.
-  const SCONTO_RIGA_RE = /^(SCONTO\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|CARTA\s+FEDELT|FEDELTA|PROMO\b|PROMOZIONE\b)/i;
-  // Buoni/coupon: si applicano sempre all'intero scontrino (piè di lista),
-  // anche quando compaiono subito dopo l'ultimo prodotto e prima del TOTALE.
-  const SCONTO_GLOBALE_RE = /^(BUONO\s+SPESA|BUONO\b|COUPON\b|VOUCHER\b)/i;
-
-  // Riga "intestazione colonna" tipo "IVA EURO" o "DESCRIZIONE PREZZO"
-  const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO)/i;
-
-  // Sequenza numerica lunga isolata (barcode/codice articolo residuo)
-  const BARCODE_RE = /^\d{8,}$/;
-
-  function normalizzaCifreOCR(tok) {
-    return tok.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/[Ss]/g, '5');
-  }
-
-  /** Estrae l'importo di fine riga, tollerando cifre confuse dall'OCR. */
-  function estraiPrezzo(l) {
-    let m = l.match(PRICE_RE_STRICT);
-    let corrected = false;
-    if (!m) {
-      m = l.match(PRICE_RE_LOOSE);
-      if (m) corrected = true;
-    }
-    if (!m) return null;
-    const tok = corrected ? normalizzaCifreOCR(m[1]) : m[1];
-    const value = parseFloat(tok.replace(',', '.'));
-    if (isNaN(value)) return null;
-    const isNegative = m[2] === '-' || m[1].startsWith('-') || /-S?$/i.test(m[0].trim());
-    return { value, isNegative, corrected, matchStr: m[0] };
-  }
-
+  // ---------- Scansione voci ----------
   let lastProductIdx = -1;
   let totaleFound = false;
+  let nomeOrfano = '';   // nome andato a capo, in attesa dell'importo
 
   for (let i = 0; i < lines.length; i++) {
-    const lOrig = lines[i];
-    // Versione "pulita" per il match: rimuove i tag IVA tipo "*a" e marker
-    // isolati di fine riga ("*", "•") tipici del documento commerciale.
-    const l = lOrig.replace(IVA_TAG_RE, '').replace(/[*•·]+\s*$/, '').replace(/\s+/g, ' ').trim();
+    // Rimuove tag IVA e marker isolati di fine riga ("*", "•").
+    const l = lines[i].replace(IVA_TAG_RE, '').replace(/[*•·]+\s*$/, '').replace(/\s+/g, ' ').trim();
+    if (!l) continue;
     const lUp = l.toUpperCase();
 
-    if (!l) continue;
-    if (HEADER_RE.test(lUp)) continue;
-    if (BARCODE_RE.test(l)) continue;
+    if (HEADER_RE.test(lUp) || BARCODE_RE.test(l)) { nomeOrfano = ''; continue; }
 
-    // TOTALE
+    const importi = trovaImporti(l);
+    if (importi.length) result.diagnostica.righeConImporto++;
+    // L'importo di riga è il token PIÙ A DESTRA (colonna prezzo), non il primo:
+    // così "SPUMA BIANCA 1,15LT ... 1,15" prende il prezzo, non il formato.
+    const imp = importi.length ? importi[importi.length - 1] : null;
+
+    // --- TOTALE ---
     if (TOTAL_RE.test(lUp)) {
-      const p = estraiPrezzo(l);
-      if (p) result.totale = Math.max(result.totale, Math.abs(p.value));
+      if (imp) {
+        const v = Math.abs(imp.value);
+        result.totaleRiportato = result.totaleRiportato === null ? v : Math.max(result.totaleRiportato, v);
+      }
       totaleFound = true;
+      nomeOrfano = '';
       continue;
     }
 
-    if (SKIP_RE.test(lUp)) continue;
+    if (SKIP_RE.test(lUp)) { nomeOrfano = ''; continue; }
 
-    // Buono/coupon/voucher → sempre sconto complessivo (a piè di lista),
-    // anche se compare prima del TOTALE e subito dopo un prodotto.
+    // --- Buono/coupon: sconto sull'intero scontrino ---
     if (SCONTO_GLOBALE_RE.test(lUp)) {
-      const p = estraiPrezzo(l);
-      if (p && p.value > 0) result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(p.value));
+      if (imp && imp.value > 0) {
+        result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(imp.value));
+      }
+      nomeOrfano = '';
       continue;
     }
 
-    // Sconto di riga (es. "SCONTO FIDATY 40%") → sottrae dal prodotto precedente;
-    // se non c'è un prodotto precedente valido (o compare dopo il TOTALE), lo
-    // trattiamo come sconto complessivo.
+    // --- Sconto di riga: sottrae dal prodotto precedente ---
     if (SCONTO_RIGA_RE.test(lUp)) {
-      const p = estraiPrezzo(l);
-      if (p && p.value > 0) {
+      if (imp && imp.value > 0) {
         if (!totaleFound && lastProductIdx >= 0) {
-          applicaSconto(result.righe[lastProductIdx], Math.abs(p.value));
+          applicaSconto(result.righe[lastProductIdx], Math.abs(imp.value));
         } else {
-          result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(p.value));
+          result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(imp.value));
         }
       }
+      nomeOrfano = '';
       continue;
     }
 
-    // Tentativo di estrarre <nome> + <prezzo>
-    const p = estraiPrezzo(l);
-    if (!p) continue;
+    // --- Riga quantità/peso: non è una voce a sé ---
+    if (QTA_RE.test(l)) { continue; }
 
-    // Importi negativi senza parola "SCONTO" → trattali come sconto sul prodotto precedente
-    if (p.isNegative) {
-      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(p.value));
+    // --- Riga senza importo: possibile nome andato a capo ---
+    if (!imp) {
+      const testoNome = pulisciNomeProdotto(l);
+      nomeOrfano = (testoNome && testoNome.length >= 3 && /[a-zA-Z]{3}/.test(testoNome)) ? testoNome : '';
       continue;
     }
 
-    // Plausibilità prezzo unitario
-    if (p.value <= 0 || p.value > 999) continue;
+    // --- Importo negativo senza parola chiave: sconto sul prodotto sopra ---
+    if (imp.negativo) {
+      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(imp.value));
+      nomeOrfano = '';
+      continue;
+    }
 
-    // Estrai il nome prodotto da `l` (già ripulita di tag IVA e marker di
-    // fine riga, stessa stringa su cui è stato calcolato p.matchStr, così
-    // lo slicing resta allineato) rimuovendo il prezzo di fine riga.
-    let nomeRaw = l.slice(0, l.length - p.matchStr.length).trim();
-    // Rimuovi asterischi residui (marker "prezzo variabile" tipo "BANANE *") e punteggiatura finale
-    nomeRaw = nomeRaw.replace(/\*+/g, ' ').replace(/\s+/g, ' ').trim();
-    nomeRaw = nomeRaw.replace(/[\s,;:.\-]+$/, '');
+    // Plausibilità dell'importo come prezzo di una singola voce.
+    if (imp.value <= 0 || imp.value > 999) { result.diagnostica.righeScartate++; nomeOrfano = ''; continue; }
 
-    // Scarta righe spurie (puro numero, sigle troppo corte, righe che iniziano con cifra → quantità)
-    if (!nomeRaw || nomeRaw.length < 2) continue;
-    if (/^\d+([.,]\d+)?\s*X\s*\d/i.test(nomeRaw)) continue; // "2 X 1,49"
-    if (/^[\d\s.,X]+$/i.test(nomeRaw)) continue;
+    // Nome = tutto ciò che precede l'importo; se vuoto, si ricuce con la
+    // riga precedente rimasta orfana (nome lungo andato a capo).
+    let nome = pulisciNomeProdotto(l.slice(0, imp.start));
+    let ricucito = false;
+    if ((!nome || nome.length < 2) && nomeOrfano) { nome = nomeOrfano; ricucito = true; }
+    nomeOrfano = '';
 
-    // Confidence: penalizza correzioni OCR, nomi troppo corti/numerici, importi anomali
+    if (!nome || nome.length < 2) { result.diagnostica.righeScartate++; continue; }
+    if (!/[a-zA-Z]{2}/.test(nome)) { result.diagnostica.righeScartate++; continue; }
+
+    // Confidence: penalizza correzioni OCR, nomi corti/sporchi, importi anomali.
     let confidence = 1;
-    if (p.corrected) confidence -= 0.3;
-    if (nomeRaw.length <= 3) confidence -= 0.25;
-    if (/\d{3,}/.test(nomeRaw)) confidence -= 0.3;
-    if (p.value > 50) confidence -= 0.15;
+    if (imp.fuzzy) confidence -= 0.35;
+    if (ricucito) confidence -= 0.1;
+    if (nome.length <= 3) confidence -= 0.25;
+    if (/\d{3,}/.test(nome)) confidence -= 0.3;
+    if (imp.value > 50) confidence -= 0.15;
     confidence = Math.max(0, Math.min(1, confidence));
-    const needsReview = confidence < 0.7;
-    if (needsReview) result.righeDaVerificare++;
 
     result.righe.push({
-      prodotto: capitalize(nomeRaw),
-      categoria: indovinaCategoria(nomeRaw),
-      prezzoBase: round2(p.value),
-      prezzoLordo: round2(p.value),  // alias retrocompatibile
+      prodotto: capitalize(nome),
+      categoria: indovinaCategoria(nome),
+      prezzoBase: round2(imp.value),
+      prezzoLordo: round2(imp.value),   // alias retrocompatibile
       sconto: 0,
-      prezzoFinale: round2(p.value),
-      prezzo: round2(p.value),       // alias retrocompatibile
+      prezzoFinale: round2(imp.value),
+      prezzo: round2(imp.value),        // alias retrocompatibile
       confidence: round2(confidence),
-      needsReview,
-      corretto: p.corrected,
+      needsReview: confidence < 0.7,
+      corretto: imp.fuzzy,
       sorgente: 'ocr'
     });
     lastProductIdx = result.righe.length - 1;
   }
 
-  // Rimuovi prodotti azzerati (es. sconto >= prezzo lordo)
+  // Rimuove voci azzerate da uno sconto >= prezzo lordo.
   result.righe = result.righe.filter(r => r.prezzo > 0);
   result.righeDaVerificare = result.righe.filter(r => r.needsReview).length;
 
+  // ---------- Totale ----------
   const sommaRighe = round2(result.righe.reduce((a, r) => a + r.prezzo, 0));
-
-  // Il totale letto dalla riga "TOTALE EURO" è già l'importo netto pagato
-  // (comprende anche eventuali buoni/coupon a piè di lista) e va usato così
-  // com'è. Solo se lo scontrino NON riporta un totale leggibile, lo si
-  // ricostruisce come somma righe meno lo sconto complessivo individuato.
-  if (!result.totale && result.righe.length) {
-    result.totale = round2(Math.max(0, sommaRighe - result.scontoComplessivo));
-  }
-
-  // Avviso se il totale dichiarato sullo scontrino non torna con
-  // (somma righe − sconto complessivo a piè di lista)
   const atteso = round2(Math.max(0, sommaRighe - result.scontoComplessivo));
-  if (result.totale > 0 && Math.abs(atteso - result.totale) > 0.05) {
-    result.avvisi.push(`Il totale letto (${result.totale.toFixed(2)}€) non coincide con il totale calcolato (${atteso.toFixed(2)}€): verifica manualmente.`);
+  // Il totale stampato è già l'importo netto pagato (buoni inclusi): si usa
+  // così com'è; solo se manca lo si ricostruisce dalle righe.
+  result.totale = result.totaleRiportato !== null ? result.totaleRiportato : atteso;
+
+  validaEstrazione(result, sommaRighe, atteso);
+  return result;
+}
+
+/** Ripulisce un nome prodotto da tag, marker e punteggiatura residua. */
+function pulisciNomeProdotto(s) {
+  return String(s || '')
+    .replace(IVA_TAG_RE, ' ')
+    .replace(/\*+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s,;:.\-]+/, '')
+    .replace(/[\s,;:.\-]+$/, '')
+    .trim();
+}
+
+/**
+ * Checkpoint di validazione. Popola `errori` (bloccanti: l'utente deve
+ * intervenire, niente prosecuzione silenziosa) e `avvisi` (da verificare).
+ */
+function validaEstrazione(result, sommaRighe, atteso) {
+  const d = result.diagnostica;
+
+  // C1 — nessuna voce estratta: errore bloccante.
+  if (result.righe.length === 0) {
+    result.errori.push(
+      d.righeConImporto === 0
+        ? 'Nessun importo riconosciuto nel testo letto: la foto probabilmente non è leggibile (sfocata, storta o con poco contrasto). Riprova, oppure inserisci le voci a mano.'
+        : `Riconosciuti ${d.righeConImporto} importi ma nessuna voce valida (nomi prodotto non leggibili). Controlla il testo grezzo qui sotto e inserisci le voci a mano.`
+    );
+    return;
   }
 
-  return result;
+  // C2 — densità voci sospetta: molte righe, pochissime interpretate.
+  const densita = d.righeTotali ? result.righe.length / d.righeTotali : 0;
+  if (d.righeTotali >= 12 && densita < 0.2) {
+    result.avvisi.push(`Estratte solo ${result.righe.length} voci su ${d.righeTotali} righe lette: la foto potrebbe essere parzialmente illeggibile. Controlla che non manchino prodotti.`);
+  }
+
+  // C3 — coerenza totale calcolato vs totale riportato sullo scontrino.
+  if (result.totaleRiportato === null) {
+    result.avvisi.push(`Totale non trovato sullo scontrino: usato il totale calcolato dalle voci (${atteso.toFixed(2)}€). Verifica che corrisponda.`);
+  } else {
+    const delta = round2(Math.abs(atteso - result.totaleRiportato));
+    // L'aritmetica di uno scontrino è esatta al centesimo: la sola differenza
+    // legittima è l'arrotondamento degli sconti di riga (pochi centesimi).
+    // Tolleranza FISSA, non percentuale: altrimenti su uno scontrino da 200€
+    // una voce mancante da 2€ resterebbe nascosta.
+    const tolleranza = 0.05;
+    if (delta > tolleranza) {
+      const dett = `somma voci ${sommaRighe.toFixed(2)}€` +
+        (result.scontoComplessivo > 0 ? ` − sconti ${result.scontoComplessivo.toFixed(2)}€ = ${atteso.toFixed(2)}€` : '') +
+        `, totale sullo scontrino ${result.totaleRiportato.toFixed(2)}€`;
+      const msg = `Il totale non torna (${dett}, differenza ${delta.toFixed(2)}€): mancano o sono errate delle voci.`;
+      // Scarto ampio (≈ una voce intera mancante) → errore bloccante;
+      // scarto contenuto → avviso.
+      if (delta > Math.max(1, result.totaleRiportato * 0.02)) result.errori.push(msg);
+      else result.avvisi.push(msg);
+    }
+  }
+
+  // C4 — voci a bassa confidenza da rivedere.
+  if (result.righeDaVerificare > 0) {
+    result.avvisi.push(`${result.righeDaVerificare} voci hanno una lettura incerta (evidenziate in arancione): controlla nome e prezzo prima di registrare.`);
+  }
+
+  // C5 — importi fuori scala per una singola voce di spesa.
+  const anomali = result.righe.filter(r => r.prezzo > 200);
+  if (anomali.length) {
+    result.avvisi.push(`${anomali.length} voci hanno un importo insolitamente alto (es. "${anomali[0].prodotto}" ${anomali[0].prezzo.toFixed(2)}€): verifica che non sia un errore di lettura.`);
+  }
 }
 
 function applicaSconto(riga, importo) {
@@ -4028,7 +4250,58 @@ function popolaPreviewDaParser(p) {
     });
   }
   aggiornaTotaleScontrino();
-  (p.avvisi || []).forEach(a => toast(a, 'warning', 6000));
+  mostraEsitoOCR(p);
+}
+
+/**
+ * Rende visibile l'esito dei checkpoint: errori bloccanti in rosso, avvisi
+ * in arancione, più il testo grezzo come fallback per l'inserimento manuale.
+ * Nessun percorso resta silenzioso: se non c'è nulla da estrarre, l'utente
+ * lo legge esplicitamente insieme al motivo.
+ */
+function mostraEsitoOCR(p) {
+  const box = document.getElementById('ocr-alerts');
+  const errori = p.errori || [];
+  const avvisi = p.avvisi || [];
+  box.innerHTML = '';
+
+  errori.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'alert danger';
+    div.style.marginBottom = '10px';
+    div.innerHTML = '<strong>Estrazione non riuscita.</strong> ' + escapeHtml(e);
+    box.appendChild(div);
+  });
+
+  avvisi.forEach(a => {
+    const div = document.createElement('div');
+    div.className = 'alert warning';
+    div.style.marginBottom = '10px';
+    div.innerHTML = '<strong>Da verificare.</strong> ' + escapeHtml(a);
+    box.appendChild(div);
+  });
+
+  if (!errori.length && !avvisi.length && p.righe && p.righe.length) {
+    const div = document.createElement('div');
+    div.className = 'alert success';
+    div.style.marginBottom = '10px';
+    div.textContent = `${p.righe.length} voci estratte, totale ${fmt(p.totale)}. Controlla e registra.`;
+    box.appendChild(div);
+  }
+
+  // Testo grezzo: sempre disponibile, aperto d'ufficio quando l'estrazione
+  // è fallita (serve all'utente per ricopiare le voci a mano).
+  const wrap = document.getElementById('ocr-raw-wrap');
+  const pre = document.getElementById('ocr-raw');
+  if (ocrText && ocrText.trim()) {
+    pre.textContent = ocrText;
+    wrap.style.display = '';
+    wrap.open = errori.length > 0;
+  } else {
+    wrap.style.display = 'none';
+    wrap.open = false;
+    pre.textContent = '';
+  }
 }
 
 document.getElementById('btn-salva-scontrino').addEventListener('click', () => {

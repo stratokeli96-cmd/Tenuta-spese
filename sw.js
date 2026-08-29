@@ -10,7 +10,7 @@
 
 // Da incrementare ad ogni release insieme a APP_VERSION in index.html:
 // forza l'eliminazione della shell cache precedente (vedi 'activate' sotto).
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
 const RUNTIME_CACHE = 'tenuta-runtime-' + CACHE_VERSION;
 
