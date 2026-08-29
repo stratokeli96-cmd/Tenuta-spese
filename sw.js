@@ -8,7 +8,9 @@
  * Nessun dato utente passa di qui: localStorage resta sul dispositivo.
  */
 
-const CACHE_VERSION = 'v2';
+// Da incrementare ad ogni release insieme a APP_VERSION in index.html:
+// forza l'eliminazione della shell cache precedente (vedi 'activate' sotto).
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
 const RUNTIME_CACHE = 'tenuta-runtime-' + CACHE_VERSION;
 
