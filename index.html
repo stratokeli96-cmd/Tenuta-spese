@@ -1256,6 +1256,11 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
     row-gap: var(--sp-sm);
   }
 }
+.scontrino-row.review .sr-prodotto,
+.scontrino-row.review .sr-prezzo {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 1px var(--warning) inset;
+}
 .scontrino-total {
   display: flex;
   justify-content: space-between;
@@ -3164,10 +3169,11 @@ function renderScontrino() {
   aggiornaTotaleScontrino();
 }
 
-function aggiungiRigaScontrino(prodotto = '', categoria = 'Altro', prezzo = '') {
+function aggiungiRigaScontrino(prodotto = '', categoria = 'Altro', prezzo = '', review = false) {
   const wrap = document.getElementById('scontrino-rows');
   const div = document.createElement('div');
-  div.className = 'scontrino-row';
+  div.className = 'scontrino-row' + (review ? ' review' : '');
+  if (review) div.title = 'Bassa confidenza OCR — verifica prodotto e prezzo prima di registrare.';
   div.innerHTML = `
     <input type="text" class="sr-prodotto" placeholder="Nome prodotto" value="${escapeHtml(prodotto)}" />
     <select class="sr-categoria">
@@ -3268,10 +3274,11 @@ async function gestisciFileOCR(file) {
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
 
     const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
-    const msg = conSconto
-      ? `OCR completato: ${parsed.righe.length} righe (${conSconto} con sconto applicato)`
-      : `OCR completato: ${parsed.righe.length} righe estratte`;
-    toast(msg, 'success');
+    const daVerificare = parsed.righeDaVerificare || 0;
+    let msg = `OCR completato: ${parsed.righe.length} righe estratte`;
+    if (conSconto) msg += `, ${conSconto} con sconto applicato`;
+    if (daVerificare) msg += `, ${daVerificare} da verificare (bassa confidenza)`;
+    toast(msg, daVerificare ? 'warning' : 'success');
   } catch (e) {
     console.error(e);
     ocrStatus.textContent = '';
@@ -3282,9 +3289,12 @@ async function gestisciFileOCR(file) {
 }
 
 /**
- * Pre-processing per migliorare la leggibilità OCR di foto da smartphone
- * o screenshot da PC: upscale a ~2000px lato lungo + grayscale + contrasto
- * lineare attorno alla media. Restituisce un dataURL PNG.
+ * Pre-processing per migliorare la leggibilità OCR di foto da smartphone:
+ * upscale a ~2000px lato lungo → deskew (stima angolo su proiezione
+ * orizzontale) → grayscale + contrasto lineare attorno alla media →
+ * binarizzazione adattiva (Bradley/Wellner via integral image, soglia
+ * = media locale). Restituisce un dataURL PNG. Se un passaggio fallisce,
+ * degrada silenziosamente al risultato del passaggio precedente.
  */
 async function preprocessReceiptImage(dataUrl) {
   return new Promise((resolve) => {
@@ -3296,30 +3306,51 @@ async function preprocessReceiptImage(dataUrl) {
         const scale = longSide > 0 ? Math.min(3, Math.max(1, TARGET_LONG / longSide)) : 1;
         const w = Math.round(img.naturalWidth * scale);
         const h = Math.round(img.naturalHeight * scale);
-        const canvas = document.createElement('canvas');
+
+        let canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
-        const ctx = canvas.getContext('2d');
+        let ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
 
-        const imgData = ctx.getImageData(0, 0, w, h);
+        // --- deskew ---
+        try {
+          const skew = estimateSkewAngle(canvas);
+          if (Math.abs(skew) > 0.2 && Math.abs(skew) < 15) {
+            canvas = rotateCanvas(canvas, -skew);
+            ctx = canvas.getContext('2d');
+          }
+        } catch (err) {
+          console.warn('Deskew fallito, proseguo senza:', err);
+        }
+
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = imgData.data;
 
-        // calcolo media luminosità per ancorare il contrasto
+        // --- grayscale + contrasto lineare attorno alla media ---
         let sum = 0;
         for (let i = 0; i < d.length; i += 4) {
-          sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          d[i] = d[i + 1] = d[i + 2] = gray;
+          sum += gray;
         }
         const mean = sum / (d.length / 4);
         const CONTRAST = 1.5;
         for (let i = 0; i < d.length; i += 4) {
-          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          let v = (gray - mean) * CONTRAST + mean;
+          let v = (d[i] - mean) * CONTRAST + mean;
           if (v < 0) v = 0; else if (v > 255) v = 255;
           d[i] = d[i + 1] = d[i + 2] = v;
         }
+
+        // --- binarizzazione adattiva (soglia = media locale) ---
+        try {
+          adaptiveBinarizeInPlace(imgData, canvas.width, canvas.height);
+        } catch (err) {
+          console.warn('Binarizzazione adattiva fallita, uso solo contrasto:', err);
+        }
+
         ctx.putImageData(imgData, 0, 0);
         resolve(canvas.toDataURL('image/png'));
       } catch (err) {
@@ -3330,6 +3361,120 @@ async function preprocessReceiptImage(dataUrl) {
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
+}
+
+/**
+ * Stima l'angolo di inclinazione (in gradi, positivo = orario) cercando,
+ * su una copia ridotta e binarizzata dell'immagine, l'angolo di rotazione
+ * che massimizza la varianza del profilo di proiezione orizzontale
+ * (le righe di testo allineate creano bande alternate dense/vuote).
+ */
+function estimateSkewAngle(sourceCanvas) {
+  const SMALL_W = 360;
+  const ratio = SMALL_W / sourceCanvas.width;
+  const sw = SMALL_W;
+  const sh = Math.max(1, Math.round(sourceCanvas.height * ratio));
+  const small = document.createElement('canvas');
+  small.width = sw;
+  small.height = sh;
+  const sctx = small.getContext('2d');
+  sctx.drawImage(sourceCanvas, 0, 0, sw, sh);
+  const dd = sctx.getImageData(0, 0, sw, sh).data;
+
+  let sum = 0;
+  const gray = new Float64Array(sw * sh);
+  for (let i = 0, p = 0; i < dd.length; i += 4, p++) {
+    const g = 0.299 * dd[i] + 0.587 * dd[i + 1] + 0.114 * dd[i + 2];
+    gray[p] = g;
+    sum += g;
+  }
+  const mean = sum / (sw * sh);
+  const bin = new Uint8Array(sw * sh);
+  for (let p = 0; p < gray.length; p++) bin[p] = gray[p] < mean ? 1 : 0; // 1 = inchiostro
+
+  let bestAngle = 0, bestScore = -1;
+  for (let a = -8; a <= 8; a += 0.5) {
+    const rad = a * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const rows = new Float64Array(sh);
+    for (let y = 0; y < sh; y++) {
+      const rowOff = y * sw;
+      for (let x = 0; x < sw; x++) {
+        if (!bin[rowOff + x]) continue;
+        const cx = x - sw / 2, cy = y - sh / 2;
+        const ry = -cx * sin + cy * cos;
+        const rowIdx = Math.round(ry + sh / 2);
+        if (rowIdx >= 0 && rowIdx < sh) rows[rowIdx]++;
+      }
+    }
+    let m = 0;
+    for (let i = 0; i < sh; i++) m += rows[i];
+    m /= sh;
+    let variance = 0;
+    for (let i = 0; i < sh; i++) { const dv = rows[i] - m; variance += dv * dv; }
+    if (variance > bestScore) { bestScore = variance; bestAngle = a; }
+  }
+  return bestAngle;
+}
+
+/** Ruota un canvas attorno al centro di `angleDeg` gradi, sfondo bianco. */
+function rotateCanvas(srcCanvas, angleDeg) {
+  const rad = angleDeg * Math.PI / 180;
+  const w = srcCanvas.width, h = srcCanvas.height;
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#fff';
+  octx.fillRect(0, 0, w, h);
+  octx.translate(w / 2, h / 2);
+  octx.rotate(rad);
+  octx.drawImage(srcCanvas, -w / 2, -h / 2);
+  return out;
+}
+
+/**
+ * Binarizzazione adattiva in-place (algoritmo di Bradley/Wellner via
+ * integral image): ogni pixel diventa nero/bianco confrontandolo con la
+ * media locale in una finestra ~w/8, così zone con illuminazione/ombre
+ * disomogenee (tipiche delle foto da smartphone) restano leggibili.
+ */
+function adaptiveBinarizeInPlace(imgData, w, h) {
+  const d = imgData.data;
+  const gray = new Float64Array(w * h);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) gray[p] = d[i];
+
+  const integral = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let rowSum = 0;
+    const rowOut = (y + 1) * (w + 1);
+    const rowPrev = y * (w + 1);
+    for (let x = 0; x < w; x++) {
+      rowSum += gray[y * w + x];
+      integral[rowOut + x + 1] = integral[rowPrev + x + 1] + rowSum;
+    }
+  }
+
+  const S = Math.max(15, Math.floor(w / 8));
+  const s2 = Math.floor(S / 2);
+  const T = 0.85; // pixel < 85% della media locale → nero
+
+  for (let y = 0; y < h; y++) {
+    const y1 = Math.max(0, y - s2), y2 = Math.min(h - 1, y + s2);
+    for (let x = 0; x < w; x++) {
+      const x1 = Math.max(0, x - s2), x2 = Math.min(w - 1, x + s2);
+      const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+      const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
+                - integral[y1 * (w + 1) + (x2 + 1)]
+                - integral[(y2 + 1) * (w + 1) + x1]
+                + integral[y1 * (w + 1) + x1];
+      const localMean = sum / count;
+      const p = y * w + x;
+      const val = gray[p] < localMean * T ? 0 : 255;
+      const di = p * 4;
+      d[di] = d[di + 1] = d[di + 2] = val;
+    }
+  }
 }
 
 /**
@@ -3415,7 +3560,10 @@ function parseScontrino(txt) {
   // Pulisci e mantieni anche la versione "originale" della riga per estrarre il nome
   const lines = rawLines.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
 
-  const result = { negozio: '', localita: '', data: '', totale: 0, righe: [] };
+  const result = {
+    negozio: '', localita: '', data: '', totale: 0,
+    righe: [], scontoComplessivo: 0, righeDaVerificare: 0, avvisi: []
+  };
 
   // ---------- Negozio ----------
   // Cerca nelle prime 8 righe non vuote: preferisce "S.P.A." / "S.R.L." / "SUPERMERCATO"
@@ -3451,23 +3599,52 @@ function parseScontrino(txt) {
   // ---------- Regex ----------
   // Prezzo a fine riga: opz. segno '-', cifre, virgola/punto, 2 decimali,
   // opz. trattino finale e/o lettera "S" (suffisso "-S" tipico di sconti Esselunga).
-  const PRICE_RE = /(-?\d{1,4}[.,]\d{2})\s*(-)?\s*([A-Z])?\s*$/;
+  const PRICE_RE_STRICT = /(-?\d{1,4}[.,]\d{2})\s*(-)?\s*([A-Z])?\s*$/;
+  // Variante "tollerante": accetta cifre confuse dall'OCR (O/o↔0, I/l/|↔1, S/s↔5)
+  // dentro il token numerico — usata solo se il match rigoroso fallisce.
+  const PRICE_RE_LOOSE = /(-?[0-9OoIl|Ss]{1,4}[.,][0-9OoIl|Ss]{2})\s*(-)?\s*([A-Z])?\s*$/;
   // Marker IVA in mezzo alla riga: "*a", "*b", "*c", "*d" — vanno tolti prima del match prezzo
   const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
 
   // Righe da ignorare totalmente
-  const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|RESTO|CONTANTI|CONTANTE|CARTA|BANCOMAT|POS|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*IVA\b|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE\b|CODICE|TICKET\b|EAN\b|VIA\s|CORSO\s|PIAZZA\s|VIALE\s|DI\s+CUI\s+IVA|ARRIVEDERCI|AUTENTIC)/i;
+  const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|RESTO|CONTANTI|CONTANTE|CARTA\b|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*IVA\b|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE\b|CODICE|TICKET\b|EAN\b|VIA\s|CORSO\s|PIAZZA\s|VIALE\s|DI\s+CUI\s+IVA|ARRIVEDERCI|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT)/i;
 
   // Riga del totale finale
   const TOTAL_RE = /^(TOTALE\s+EURO|TOTAL[E]?\b|TOT\.?\s*EURO|TOTALE\s+COMPLESSIVO|TOT\s+VENDITA)/i;
 
-  // Riga di sconto/coupon — viene sottratta dal prodotto precedente
-  const SCONTO_RE = /^(SCONTO\b|BUONO\s+SPESA|BUONO\b|COUPON\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|VOUCHER\b|CARTA\s+FEDELT|FEDELTA)/i;
+  // Riga di sconto/coupon/promozione. Se compare PRIMA del totale viene
+  // sottratta al prodotto precedente (sconto di riga); se compare DOPO
+  // il totale è uno sconto complessivo a piè di lista.
+  const SCONTO_RE = /^(SCONTO\b|BUONO\s+SPESA|BUONO\b|COUPON\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|VOUCHER\b|CARTA\s+FEDELT|FEDELTA|PROMO\b|PROMOZIONE\b)/i;
 
   // Riga "intestazione colonna" tipo "IVA EURO" o "DESCRIZIONE PREZZO"
   const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO)/i;
 
+  // Sequenza numerica lunga isolata (barcode/codice articolo residuo)
+  const BARCODE_RE = /^\d{8,}$/;
+
+  function normalizzaCifreOCR(tok) {
+    return tok.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/[Ss]/g, '5');
+  }
+
+  /** Estrae l'importo di fine riga, tollerando cifre confuse dall'OCR. */
+  function estraiPrezzo(l) {
+    let m = l.match(PRICE_RE_STRICT);
+    let corrected = false;
+    if (!m) {
+      m = l.match(PRICE_RE_LOOSE);
+      if (m) corrected = true;
+    }
+    if (!m) return null;
+    const tok = corrected ? normalizzaCifreOCR(m[1]) : m[1];
+    const value = parseFloat(tok.replace(',', '.'));
+    if (isNaN(value)) return null;
+    const isNegative = m[2] === '-' || m[1].startsWith('-') || /-S?$/i.test(m[0].trim());
+    return { value, isNegative, corrected, matchStr: m[0] };
+  }
+
   let lastProductIdx = -1;
+  let totaleFound = false;
 
   for (let i = 0; i < lines.length; i++) {
     const lOrig = lines[i];
@@ -3477,50 +3654,50 @@ function parseScontrino(txt) {
 
     if (!l) continue;
     if (HEADER_RE.test(lUp)) continue;
+    if (BARCODE_RE.test(l)) continue;
 
     // TOTALE
     if (TOTAL_RE.test(lUp)) {
-      const m = l.match(PRICE_RE);
-      if (m) {
-        const v = parseFloat(m[1].replace(',', '.'));
-        if (!isNaN(v)) result.totale = Math.max(result.totale, Math.abs(v));
-      }
+      const p = estraiPrezzo(l);
+      if (p) result.totale = Math.max(result.totale, Math.abs(p.value));
+      totaleFound = true;
       continue;
     }
 
     if (SKIP_RE.test(lUp)) continue;
 
-    // SCONTO/BUONO esplicito → sottrae al prodotto precedente
+    // SCONTO/BUONO/PROMO esplicito
     if (SCONTO_RE.test(lUp)) {
-      const m = l.match(PRICE_RE);
-      if (m && lastProductIdx >= 0) {
-        const v = Math.abs(parseFloat(m[1].replace(',', '.')));
-        if (!isNaN(v) && v > 0) applicaSconto(result.righe[lastProductIdx], v);
+      const p = estraiPrezzo(l);
+      if (p && p.value > 0) {
+        if (!totaleFound && lastProductIdx >= 0) {
+          // sconto di riga: sottrae dal prodotto precedente
+          applicaSconto(result.righe[lastProductIdx], Math.abs(p.value));
+        } else {
+          // sconto a piè di lista / sul totale complessivo
+          result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(p.value));
+        }
       }
       continue;
     }
 
     // Tentativo di estrarre <nome> + <prezzo>
-    const m = l.match(PRICE_RE);
-    if (!m) continue;
-
-    let valore = parseFloat(m[1].replace(',', '.'));
-    const isNegativeAmount = m[2] === '-' || m[1].startsWith('-') || /-S?$/i.test(m[0].trim());
-    if (isNaN(valore)) continue;
+    const p = estraiPrezzo(l);
+    if (!p) continue;
 
     // Importi negativi senza parola "SCONTO" → trattali come sconto sul prodotto precedente
-    if (isNegativeAmount) {
-      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(valore));
+    if (p.isNegative) {
+      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(p.value));
       continue;
     }
 
     // Plausibilità prezzo unitario
-    if (valore <= 0 || valore > 999) continue;
+    if (p.value <= 0 || p.value > 999) continue;
 
     // Estrai il nome prodotto dalla riga ORIGINALE (mantenendo eventuali maiuscole/punti)
     // ma rimuovendo il tag IVA e il prezzo
     let nomeRaw = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
-    nomeRaw = nomeRaw.slice(0, nomeRaw.length - m[0].length).trim();
+    nomeRaw = nomeRaw.slice(0, nomeRaw.length - p.matchStr.length).trim();
     nomeRaw = nomeRaw.replace(/[\s,;:.\-]+$/, '');
 
     // Scarta righe spurie (puro numero, sigle troppo corte, righe che iniziano con cifra → quantità)
@@ -3528,28 +3705,58 @@ function parseScontrino(txt) {
     if (/^\d+([.,]\d+)?\s*X\s*\d/i.test(nomeRaw)) continue; // "2 X 1,49"
     if (/^[\d\s.,X]+$/i.test(nomeRaw)) continue;
 
+    // Confidence: penalizza correzioni OCR, nomi troppo corti/numerici, importi anomali
+    let confidence = 1;
+    if (p.corrected) confidence -= 0.3;
+    if (nomeRaw.length <= 3) confidence -= 0.25;
+    if (/\d{3,}/.test(nomeRaw)) confidence -= 0.3;
+    if (p.value > 50) confidence -= 0.15;
+    confidence = Math.max(0, Math.min(1, confidence));
+    const needsReview = confidence < 0.7;
+    if (needsReview) result.righeDaVerificare++;
+
     result.righe.push({
       prodotto: capitalize(nomeRaw),
       categoria: indovinaCategoria(nomeRaw),
-      prezzo: round2(valore),
-      prezzoLordo: round2(valore),
-      sconto: 0
+      prezzoBase: round2(p.value),
+      prezzoLordo: round2(p.value),  // alias retrocompatibile
+      sconto: 0,
+      prezzoFinale: round2(p.value),
+      prezzo: round2(p.value),       // alias retrocompatibile
+      confidence: round2(confidence),
+      needsReview,
+      corretto: p.corrected,
+      sorgente: 'ocr'
     });
     lastProductIdx = result.righe.length - 1;
   }
 
   // Rimuovi prodotti azzerati (es. sconto >= prezzo lordo)
   result.righe = result.righe.filter(r => r.prezzo > 0);
+  result.righeDaVerificare = result.righe.filter(r => r.needsReview).length;
+
+  // Applica lo sconto complessivo a piè di lista al totale
+  if (result.scontoComplessivo > 0 && result.totale > 0) {
+    result.totale = round2(Math.max(0, result.totale - result.scontoComplessivo));
+  }
 
   if (!result.totale && result.righe.length) {
     result.totale = result.righe.reduce((a, r) => a + r.prezzo, 0);
   }
+
+  // Avviso se il totale dichiarato sullo scontrino non torna con la somma righe
+  const sommaRighe = round2(result.righe.reduce((a, r) => a + r.prezzo, 0));
+  if (result.totale > 0 && Math.abs(sommaRighe - result.totale) > 0.05) {
+    result.avvisi.push(`Il totale letto (${result.totale.toFixed(2)}€) non coincide con la somma delle righe (${sommaRighe.toFixed(2)}€): verifica manualmente.`);
+  }
+
   return result;
 }
 
 function applicaSconto(riga, importo) {
   riga.sconto = round2((riga.sconto || 0) + importo);
   riga.prezzo = round2(Math.max(0, (riga.prezzoLordo || riga.prezzo) - riga.sconto));
+  riga.prezzoFinale = riga.prezzo;
 }
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -3783,10 +3990,11 @@ function popolaPreviewDaParser(p) {
       const label = (r.sconto && r.sconto > 0)
         ? `${r.prodotto} (lordo ${fmt(r.prezzoLordo)} − sconto ${fmt(r.sconto)})`
         : r.prodotto;
-      aggiungiRigaScontrino(label, r.categoria, r.prezzo);
+      aggiungiRigaScontrino(label, r.categoria, r.prezzo, r.needsReview);
     });
   }
   aggiornaTotaleScontrino();
+  (p.avvisi || []).forEach(a => toast(a, 'warning', 6000));
 }
 
 document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
