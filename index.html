@@ -3609,13 +3609,17 @@ function parseScontrino(txt) {
   // Righe da ignorare totalmente
   const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|RESTO|CONTANTI|CONTANTE|CARTA\b|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*IVA\b|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE\b|CODICE|TICKET\b|EAN\b|VIA\s|CORSO\s|PIAZZA\s|VIALE\s|DI\s+CUI\s+IVA|ARRIVEDERCI|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT)/i;
 
-  // Riga del totale finale
-  const TOTAL_RE = /^(TOTALE\s+EURO|TOTAL[E]?\b|TOT\.?\s*EURO|TOTALE\s+COMPLESSIVO|TOT\s+VENDITA)/i;
+  // Riga del totale finale. NB: niente "TOTAL" nudo come alternativa — è un
+  // prefisso di marca reale (es. "TOTAL VASO 2 450G", yogurt Total) che
+  // andrebbe scambiato per la riga di totale dello scontrino.
+  const TOTAL_RE = /^(TOTALE\s+EURO|TOT\.?\s*EURO|TOTALE\s+COMPLESSIVO|TOT\s+VENDITA|TOTALE\s*$)/i;
 
-  // Riga di sconto/coupon/promozione. Se compare PRIMA del totale viene
-  // sottratta al prodotto precedente (sconto di riga); se compare DOPO
-  // il totale è uno sconto complessivo a piè di lista.
-  const SCONTO_RE = /^(SCONTO\b|BUONO\s+SPESA|BUONO\b|COUPON\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|VOUCHER\b|CARTA\s+FEDELT|FEDELTA|PROMO\b|PROMOZIONE\b)/i;
+  // Sconto legato al prodotto precedente (es. "SCONTO FIDATY 40%"): riga
+  // di sconto sempre di TIPO RIGA, indipendentemente dalla posizione.
+  const SCONTO_RIGA_RE = /^(SCONTO\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|CARTA\s+FEDELT|FEDELTA|PROMO\b|PROMOZIONE\b)/i;
+  // Buoni/coupon: si applicano sempre all'intero scontrino (piè di lista),
+  // anche quando compaiono subito dopo l'ultimo prodotto e prima del TOTALE.
+  const SCONTO_GLOBALE_RE = /^(BUONO\s+SPESA|BUONO\b|COUPON\b|VOUCHER\b)/i;
 
   // Riga "intestazione colonna" tipo "IVA EURO" o "DESCRIZIONE PREZZO"
   const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO)/i;
@@ -3648,8 +3652,9 @@ function parseScontrino(txt) {
 
   for (let i = 0; i < lines.length; i++) {
     const lOrig = lines[i];
-    // Versione "pulita" per il match: rimuove i tag IVA tipo "*a"
-    const l = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
+    // Versione "pulita" per il match: rimuove i tag IVA tipo "*a" e marker
+    // isolati di fine riga ("*", "•") tipici del documento commerciale.
+    const l = lOrig.replace(IVA_TAG_RE, '').replace(/[*•·]+\s*$/, '').replace(/\s+/g, ' ').trim();
     const lUp = l.toUpperCase();
 
     if (!l) continue;
@@ -3666,15 +3671,23 @@ function parseScontrino(txt) {
 
     if (SKIP_RE.test(lUp)) continue;
 
-    // SCONTO/BUONO/PROMO esplicito
-    if (SCONTO_RE.test(lUp)) {
+    // Buono/coupon/voucher → sempre sconto complessivo (a piè di lista),
+    // anche se compare prima del TOTALE e subito dopo un prodotto.
+    if (SCONTO_GLOBALE_RE.test(lUp)) {
+      const p = estraiPrezzo(l);
+      if (p && p.value > 0) result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(p.value));
+      continue;
+    }
+
+    // Sconto di riga (es. "SCONTO FIDATY 40%") → sottrae dal prodotto precedente;
+    // se non c'è un prodotto precedente valido (o compare dopo il TOTALE), lo
+    // trattiamo come sconto complessivo.
+    if (SCONTO_RIGA_RE.test(lUp)) {
       const p = estraiPrezzo(l);
       if (p && p.value > 0) {
         if (!totaleFound && lastProductIdx >= 0) {
-          // sconto di riga: sottrae dal prodotto precedente
           applicaSconto(result.righe[lastProductIdx], Math.abs(p.value));
         } else {
-          // sconto a piè di lista / sul totale complessivo
           result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(p.value));
         }
       }
@@ -3694,10 +3707,12 @@ function parseScontrino(txt) {
     // Plausibilità prezzo unitario
     if (p.value <= 0 || p.value > 999) continue;
 
-    // Estrai il nome prodotto dalla riga ORIGINALE (mantenendo eventuali maiuscole/punti)
-    // ma rimuovendo il tag IVA e il prezzo
-    let nomeRaw = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
-    nomeRaw = nomeRaw.slice(0, nomeRaw.length - p.matchStr.length).trim();
+    // Estrai il nome prodotto da `l` (già ripulita di tag IVA e marker di
+    // fine riga, stessa stringa su cui è stato calcolato p.matchStr, così
+    // lo slicing resta allineato) rimuovendo il prezzo di fine riga.
+    let nomeRaw = l.slice(0, l.length - p.matchStr.length).trim();
+    // Rimuovi asterischi residui (marker "prezzo variabile" tipo "BANANE *") e punteggiatura finale
+    nomeRaw = nomeRaw.replace(/\*+/g, ' ').replace(/\s+/g, ' ').trim();
     nomeRaw = nomeRaw.replace(/[\s,;:.\-]+$/, '');
 
     // Scarta righe spurie (puro numero, sigle troppo corte, righe che iniziano con cifra → quantità)
@@ -3735,19 +3750,21 @@ function parseScontrino(txt) {
   result.righe = result.righe.filter(r => r.prezzo > 0);
   result.righeDaVerificare = result.righe.filter(r => r.needsReview).length;
 
-  // Applica lo sconto complessivo a piè di lista al totale
-  if (result.scontoComplessivo > 0 && result.totale > 0) {
-    result.totale = round2(Math.max(0, result.totale - result.scontoComplessivo));
-  }
-
-  if (!result.totale && result.righe.length) {
-    result.totale = result.righe.reduce((a, r) => a + r.prezzo, 0);
-  }
-
-  // Avviso se il totale dichiarato sullo scontrino non torna con la somma righe
   const sommaRighe = round2(result.righe.reduce((a, r) => a + r.prezzo, 0));
-  if (result.totale > 0 && Math.abs(sommaRighe - result.totale) > 0.05) {
-    result.avvisi.push(`Il totale letto (${result.totale.toFixed(2)}€) non coincide con la somma delle righe (${sommaRighe.toFixed(2)}€): verifica manualmente.`);
+
+  // Il totale letto dalla riga "TOTALE EURO" è già l'importo netto pagato
+  // (comprende anche eventuali buoni/coupon a piè di lista) e va usato così
+  // com'è. Solo se lo scontrino NON riporta un totale leggibile, lo si
+  // ricostruisce come somma righe meno lo sconto complessivo individuato.
+  if (!result.totale && result.righe.length) {
+    result.totale = round2(Math.max(0, sommaRighe - result.scontoComplessivo));
+  }
+
+  // Avviso se il totale dichiarato sullo scontrino non torna con
+  // (somma righe − sconto complessivo a piè di lista)
+  const atteso = round2(Math.max(0, sommaRighe - result.scontoComplessivo));
+  if (result.totale > 0 && Math.abs(atteso - result.totale) > 0.05) {
+    result.avvisi.push(`Il totale letto (${result.totale.toFixed(2)}€) non coincide con il totale calcolato (${atteso.toFixed(2)}€): verifica manualmente.`);
   }
 
   return result;
