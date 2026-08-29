@@ -1848,6 +1848,14 @@ html, body { overflow-x: hidden; }
           <button class="btn btn-danger-outline" id="btn-reset-tutto" style="margin-left: auto;">Reset totale</button>
         </div>
       </div>
+
+      <div class="widget" style="margin-top: var(--sp-lg);">
+        <div class="section-title">Info app</div>
+        <p style="color: var(--text-muted);">
+          Versione <strong id="app-version-label" style="color: var(--text);"></strong><br />
+          <span id="app-version-note" style="font-size: 12px;"></span>
+        </p>
+      </div>
     </section>
 
   </main>
@@ -1938,6 +1946,15 @@ html, body { overflow-x: hidden; }
 </div>
 
 <script>
+/* ============================================================
+   VERSIONE APP
+   Da aggiornare ad ogni modifica rilevante, insieme a CACHE_VERSION
+   in sw.js: serve a verificare da Impostazioni se il telefono ha
+   scaricato l'ultima versione pubblicata.
+   ============================================================ */
+const APP_VERSION = '2026.08.29';
+const APP_BUILD_NOTE = 'OCR scontrini rafforzato (deskew, binarizzazione adattiva, sconti a piè di lista)';
+
 /* ============================================================
    STATO + MIGRAZIONE
    ============================================================ */
@@ -4581,6 +4598,8 @@ document.getElementById('recon-applica').addEventListener('click', () => {
 function renderImpostazioni() {
   document.getElementById('reddito-input').value = stato.reddito;
   document.getElementById('mese-input').value = stato.meseCorrente;
+  document.getElementById('app-version-label').textContent = APP_VERSION;
+  document.getElementById('app-version-note').textContent = APP_BUILD_NOTE;
 
   const be = document.getElementById('macro-budget-editor');
   be.innerHTML = `
