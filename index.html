@@ -2,11 +2,21 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<title>Smart Finance · Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Tenuta Spese · Dashboard</title>
+
+<!-- PWA / iOS standalone -->
+<meta name="theme-color" content="#050810" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Tenuta Spese" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@2.3.1"></script>
@@ -18,39 +28,39 @@
    DESIGN TOKENS
    ============================================================ */
 :root {
-  --bg:        #0a0a0c;
-  --bg-elev:   #131318;
-  --bg-elev-2: #1a1a20;
-  --bg-elev-3: #22222a;
-  --border:    #2a2a33;
-  --border-soft: #1f1f26;
+  --bg:        #050810;
+  --bg-elev:   #0b1225;
+  --bg-elev-2: #131c33;
+  --bg-elev-3: #1b2540;
+  --border:    rgba(103,232,249,0.28);
+  --border-soft: rgba(103,232,249,0.14);
 
-  --text:        #ece9e2;
-  --text-muted:  #9a978f;
-  --text-dim:    #6a6862;
+  --text:        #e2e8f0;
+  --text-muted:  #94a3b8;
+  --text-dim:    #64748b;
 
-  --accent:        #d4a24a;
-  --accent-2:      #e8bd62;
-  --accent-soft:   #d4a24a22;
-  --accent-line:   #d4a24a66;
-  --accent-glow:   #d4a24a33;
+  --accent:        #22d3ee;
+  --accent-2:      #3b82f6;
+  --accent-soft:   #22d3ee22;
+  --accent-line:   #22d3ee66;
+  --accent-glow:   #22d3ee33;
 
-  --needs:    #d4a24a;
-  --wants:    #c98a2e;
-  --savings:  #6b8e5a;
+  --needs:    #67e8f9;
+  --wants:    #3b82f6;
+  --savings:  #818cf8;
 
-  --needs-soft:   #d4a24a1a;
-  --wants-soft:   #c98a2e1a;
-  --savings-soft: #6b8e5a1a;
+  --needs-soft:   #67e8f91a;
+  --wants-soft:   #3b82f61a;
+  --savings-soft: #818cf81a;
 
-  --danger:   #c14a4a;
-  --warning:  #c98a2e;
-  --success:  #6b8e5a;
-  --info:     #6c8eb0;
+  --danger:   #f87171;
+  --warning:  #fbbf24;
+  --success:  #34d399;
+  --info:     #38bdf8;
 
-  --font-display: 'Crimson Pro', Georgia, serif;
-  --font-sans:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono:    'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --font-display: 'Sora', -apple-system, sans-serif;
+  --font-sans:    'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    'Space Mono', 'SF Mono', Consolas, monospace;
 
   --sp-xs: 4px;
   --sp-sm: 8px;
@@ -58,11 +68,11 @@
   --sp-lg: 24px;
   --sp-xl: 40px;
 
-  --radius:    12px;
-  --radius-sm: 8px;
-  --radius-lg: 18px;
+  --radius:    14px;
+  --radius-sm: 10px;
+  --radius-lg: 22px;
 
-  --shadow-lift: 0 12px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-lift: 0 12px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
   --shadow-card: 0 1px 2px rgba(0,0,0,0.3);
   --shadow-glow: 0 0 0 1px var(--accent-line), 0 8px 28px var(--accent-glow);
 
@@ -74,9 +84,11 @@
 
 html, body {
   background:
-    radial-gradient(1400px 700px at 85% -10%, #1c1610 0%, transparent 55%),
-    radial-gradient(900px 500px at 0% 100%, #131318 0%, transparent 60%),
+    radial-gradient(1200px 650px at 88% -8%, rgba(34,211,238,0.14) 0%, transparent 55%),
+    radial-gradient(900px 550px at 0% 100%, rgba(59,130,246,0.12) 0%, transparent 60%),
+    radial-gradient(800px 500px at 50% 45%, rgba(129,140,248,0.08) 0%, transparent 60%),
     var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -85,6 +97,11 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
 }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.35); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.55); }
 
 button {
   font-family: inherit;
@@ -117,24 +134,38 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    LAYOUT
    ============================================================ */
 .app {
-  display: grid;
-  grid-template-columns: 240px 1fr;
+  display: block;
   min-height: 100vh;
 }
 
+/* Navigation drawer off-canvas: nascosto di default a tutte le larghezze,
+   si apre via hamburger o edge-swipe. Il markup interno resta invariato. */
 .sidebar {
-  background: linear-gradient(180deg, rgba(19,19,24,0.95) 0%, rgba(10,10,12,0.95) 100%);
+  background: linear-gradient(180deg, rgba(11,18,37,0.97) 0%, rgba(5,8,16,0.97) 100%);
   backdrop-filter: blur(12px);
   border-right: 1px solid var(--border-soft);
-  padding: var(--sp-lg);
+  padding: calc(env(safe-area-inset-top) + var(--sp-lg)) var(--sp-lg)
+           calc(env(safe-area-inset-bottom) + var(--sp-lg));
   display: flex;
   flex-direction: column;
   gap: 4px;
-  position: sticky;
-  top: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: min(300px, 86vw);
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
-  z-index: 10;
+  z-index: 260;
+  transform: translateX(-103%);
+  visibility: hidden;
+  transition: transform 260ms cubic-bezier(.2,.7,.2,1), visibility 0s 260ms;
+  will-change: transform;
+}
+.sidebar.open {
+  transform: none;
+  visibility: visible;
+  transition: transform 260ms cubic-bezier(.2,.7,.2,1), visibility 0s;
+  box-shadow: 24px 0 60px rgba(0,0,0,0.5);
 }
 
 .brand {
@@ -148,6 +179,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 14px rgba(34,211,238,0.45));
 }
 .brand-sub {
   font-size: 10px;
@@ -168,10 +200,11 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
 .nav-item {
   text-align: left;
-  padding: 10px 12px;
+  padding: 12px;
+  min-height: 48px; /* touch target iOS/Android */
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -180,14 +213,14 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   width: 100%;
 }
 .nav-item:hover { background: var(--bg-elev-2); color: var(--text); }
-.nav-item.active {
+.sidebar .nav-item.active {
   background: linear-gradient(90deg, var(--accent-soft), transparent 80%);
   color: var(--accent);
 }
-.nav-item.active::before {
+.sidebar .nav-item.active::before {
   content: '';
   position: absolute;
-  left: -24px;
+  left: calc(-1 * var(--sp-lg));
   top: 8px;
   bottom: 8px;
   width: 3px;
@@ -201,7 +234,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   width: 18px;
   letter-spacing: 0.05em;
 }
-.nav-item.active .nav-icon { color: var(--accent); }
+.sidebar .nav-item.active .nav-icon { color: var(--accent); }
 .nav-dot {
   width: 8px; height: 8px; border-radius: 50%;
   display: inline-block;
@@ -226,10 +259,93 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 
 .main {
-  padding: var(--sp-xl) var(--sp-xl) 120px;
-  max-width: 1560px;
+  padding: calc(56px + env(safe-area-inset-top) + var(--sp-lg)) var(--sp-md)
+           calc(env(safe-area-inset-bottom) + 156px);
+  max-width: 100%;
   width: 100%;
 }
+@media (min-width: 1024px) {
+  .main {
+    padding: calc(56px + env(safe-area-inset-top) + var(--sp-md)) var(--sp-xl) 120px;
+    max-width: 1560px;
+    margin: 0 auto;
+  }
+}
+
+/* ============================================================
+   APP BAR + DRAWER (shell di navigazione mobile-first)
+   z-index: FAB 50 · file-ref-badge 80 · app-bar 90 · modali 100
+            · toast 200 · drawer-backdrop 250 · drawer 260
+   ============================================================ */
+.app-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: calc(56px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 14px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(5,8,16,0.75);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  z-index: 90;
+}
+.hamburger {
+  width: 48px;
+  height: 48px; /* touch target ≥48px */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.hamburger span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text-muted);
+  border-radius: 1px;
+  transition: background var(--t-fast);
+}
+.hamburger:hover span { background: var(--text); }
+.app-bar-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-bar-month {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--needs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  white-space: nowrap;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms ease;
+  z-index: 250;
+  touch-action: none;
+}
+.drawer-backdrop.active { opacity: 1; pointer-events: auto; }
+body.drawer-open { overflow: hidden; overscroll-behavior: none; }
 
 /* ============================================================
    TYPOGRAPHY
@@ -245,11 +361,15 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .page-header > div:first-child { flex: 1 1 480px; }
 .page-title {
   font-family: var(--font-display);
-  font-size: 42px;
-  font-weight: 600;
+  font-size: 30px;
+  font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.05;
   margin-bottom: 6px;
+  text-shadow: 0 0 18px rgba(34,211,238,0.25);
+}
+@media (min-width: 1024px) {
+  .page-title { font-size: 42px; }
 }
 .page-subtitle {
   color: var(--text-muted);
@@ -285,12 +405,14 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .bento {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-lg);
 }
 .widget {
-  background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
+  background: linear-gradient(160deg, rgba(30,41,59,0.55), rgba(15,23,42,0.35));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: var(--sp-lg);
@@ -299,14 +421,17 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   transition: border-color var(--t-fast), transform var(--t-base);
 }
 .widget:hover { border-color: var(--border); }
-.col-3  { grid-column: span 3; }
-.col-4  { grid-column: span 4; }
-.col-5  { grid-column: span 5; }
-.col-6  { grid-column: span 6; }
-.col-7  { grid-column: span 7; }
-.col-8  { grid-column: span 8; }
-.col-9  { grid-column: span 9; }
-.col-12 { grid-column: span 12; }
+@media (min-width: 1024px) {
+  .bento { grid-template-columns: repeat(12, 1fr); }
+  .col-3  { grid-column: span 3; }
+  .col-4  { grid-column: span 4; }
+  .col-5  { grid-column: span 5; }
+  .col-6  { grid-column: span 6; }
+  .col-7  { grid-column: span 7; }
+  .col-8  { grid-column: span 8; }
+  .col-9  { grid-column: span 9; }
+  .col-12 { grid-column: span 12; }
+}
 
 /* ============================================================
    HERO KPI
@@ -314,13 +439,19 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .hero {
   background:
     radial-gradient(600px 300px at 90% 0%, var(--accent-soft) 0%, transparent 60%),
-    linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
+    linear-gradient(160deg, rgba(30,41,59,0.55), rgba(15,23,42,0.35));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
-  padding: 28px 32px;
+  padding: 20px;
   margin-bottom: var(--sp-lg);
   position: relative;
   overflow: hidden;
+  box-shadow: 0 8px 40px rgba(34,211,238,0.08);
+}
+@media (min-width: 640px) {
+  .hero { padding: 28px 32px; }
 }
 .hero::after {
   content: '';
@@ -332,9 +463,15 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 }
 .hero-row {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr;
-  gap: 32px;
+  grid-template-columns: 1fr;
+  gap: 20px;
   align-items: center;
+}
+@media (min-width: 640px) {
+  .hero-row {
+    grid-template-columns: 1.5fr 1fr 1fr;
+    gap: 32px;
+  }
 }
 .hero-main .label {
   font-size: 10px;
@@ -347,10 +484,11 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   font-family: var(--font-mono);
   font-size: 52px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--needs);
   letter-spacing: -0.03em;
   line-height: 1;
   margin-bottom: 12px;
+  text-shadow: 0 0 14px rgba(103,232,249,0.65), 0 0 30px rgba(59,130,246,0.35);
 }
 .hero-main .meta {
   font-size: 12px;
@@ -414,12 +552,17 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .macros-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-lg);
 }
+@media (min-width: 1024px) {
+  .macros-row { grid-template-columns: repeat(3, 1fr); }
+}
 .macro-card {
-  background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
+  background: linear-gradient(160deg, rgba(30,41,59,0.55), rgba(15,23,42,0.35));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: var(--sp-lg);
@@ -573,9 +716,12 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
    ============================================================ */
 .macro-header {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-lg);
+}
+@media (min-width: 1024px) {
+  .macro-header { grid-template-columns: 1.4fr 1fr; }
 }
 .macro-stats {
   display: grid;
@@ -583,7 +729,9 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   gap: var(--sp-md);
 }
 .stat-cell {
-  background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
+  background: linear-gradient(160deg, rgba(30,41,59,0.55), rgba(15,23,42,0.35));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: var(--sp-md) var(--sp-lg);
@@ -604,7 +752,9 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .stat-cell .val.success { color: var(--success); }
 
 .gauge-card {
-  background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.6) 100%);
+  background: linear-gradient(160deg, rgba(30,41,59,0.55), rgba(15,23,42,0.35));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: var(--sp-md);
@@ -630,13 +780,16 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .tx-list { list-style: none; }
 .tx-item {
   display: grid;
-  grid-template-columns: 56px 1fr auto;
+  grid-template-columns: 44px 1fr auto;
   gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border-soft);
   font-size: 13px;
   align-items: center;
   transition: padding-left var(--t-fast);
+}
+@media (min-width: 640px) {
+  .tx-item { grid-template-columns: 56px 1fr auto; }
 }
 .tx-item:hover { padding-left: 6px; }
 .tx-item:last-child { border-bottom: none; }
@@ -661,24 +814,28 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.badge.ocr    { background: #6c8eb022; color: #b5c7d8; border: 1px solid #6c8eb055; }
+.badge.ocr    { background: #38bdf822; color: #b5c7d8; border: 1px solid #38bdf855; }
 .badge.manual { background: var(--bg-elev-2); color: var(--text-muted); border: 1px solid var(--border-soft); }
-.badge.needs   { background: #d4a24a22; color: var(--needs); border: 1px solid #d4a24a55; }
-.badge.wants   { background: #c98a2e22; color: var(--wants); border: 1px solid #c98a2e55; }
-.badge.savings { background: #6b8e5a22; color: var(--savings); border: 1px solid #6b8e5a55; }
-.badge.orphan  { background: #c14a4a22; color: var(--danger); border: 1px solid #c14a4a55; }
+.badge.needs   { background: #67e8f922; color: var(--needs); border: 1px solid #67e8f955; }
+.badge.wants   { background: #3b82f622; color: var(--wants); border: 1px solid #3b82f655; }
+.badge.savings { background: #818cf822; color: var(--savings); border: 1px solid #818cf855; }
+.badge.orphan  { background: #f8717122; color: var(--danger); border: 1px solid #f8717155; }
 
 /* ============================================================
    FORM / BUTTONS
    ============================================================ */
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
   margin-bottom: var(--sp-md);
 }
-.form-row.three { grid-template-columns: 1fr 1fr 1fr; }
 .form-row.full  { grid-template-columns: 1fr; }
+@media (min-width: 640px) {
+  .form-row { grid-template-columns: 1fr 1fr; }
+  .form-row.three { grid-template-columns: 1fr 1fr 1fr; }
+  .form-row.full  { grid-template-columns: 1fr; }
+}
 
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-label {
@@ -706,10 +863,10 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 .btn:active { transform: scale(0.97); }
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #1a1408;
+  color: #04101f;
   font-weight: 600;
 }
-.btn-primary:hover { box-shadow: 0 6px 20px rgba(212,162,74,0.35); transform: translateY(-1px); }
+.btn-primary:hover { box-shadow: 0 6px 20px rgba(34,211,238,0.35); transform: translateY(-1px); }
 .btn-secondary {
   background: var(--bg-elev-2);
   color: var(--text);
@@ -723,7 +880,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   padding: 8px 14px;
   font-size: 12px;
 }
-.btn-danger-outline:hover { background: #c14a4a22; }
+.btn-danger-outline:hover { background: #f8717122; }
 .btn-icon-danger {
   background: transparent;
   color: var(--text-dim);
@@ -732,7 +889,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
   border-radius: 4px;
   transition: all var(--t-fast);
 }
-.btn-icon-danger:hover { background: #c14a4a22; color: var(--danger); }
+.btn-icon-danger:hover { background: #f8717122; color: var(--danger); }
 .btn-ghost {
   background: transparent;
   color: var(--text-muted);
@@ -799,10 +956,10 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
   font-size: 13px;
   border-left: 3px solid;
 }
-.alert.info    { background: #6c8eb022; border-color: var(--info); color: #b5c7d8; }
-.alert.warning { background: #c98a2e22; border-color: var(--warning); color: #e0b780; }
-.alert.success { background: #6b8e5a22; border-color: var(--success); color: #a5c096; }
-.alert.danger  { background: #c14a4a22; border-color: var(--danger); color: #e0a0a0; }
+.alert.info    { background: #38bdf822; border-color: var(--info); color: #b5c7d8; }
+.alert.warning { background: #fbbf2422; border-color: var(--warning); color: #fde68a; }
+.alert.success { background: #34d39922; border-color: var(--success); color: #6ee7b7; }
+.alert.danger  { background: #f8717122; border-color: var(--danger); color: #e0a0a0; }
 
 /* ============================================================
    VIEWS
@@ -834,7 +991,9 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 }
 .modal-backdrop.active { display: flex; }
 .modal {
-  background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(19,19,24,0.95) 100%);
+  background: linear-gradient(160deg, rgba(30,41,59,0.88), rgba(15,23,42,0.82));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--sp-lg);
@@ -862,22 +1021,124 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
    ============================================================ */
 .fab {
   position: fixed;
-  bottom: 28px; right: 28px;
+  bottom: calc(env(safe-area-inset-bottom) + 84px);
+  right: 20px;
   width: 60px; height: 60px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #1a1408;
+  color: #04101f;
   font-size: 28px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(212,162,74,0.4), 0 0 0 1px var(--accent-line);
+  box-shadow: 0 0 26px rgba(34,211,238,0.55), 0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px var(--accent-line);
   z-index: 50;
   transition: all var(--t-base);
 }
-.fab:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 14px 36px rgba(212,162,74,0.5); }
+.fab:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 0 34px rgba(34,211,238,0.65), 0 14px 36px rgba(0,0,0,0.45); }
 .fab:active { transform: translateY(-1px) scale(0.98); }
+@media (min-width: 1024px) {
+  .fab { bottom: 28px; right: 28px; }
+}
+
+/* ============================================================
+   BOTTOM TAB BAR (solo mobile/tablet, sotto i 1024px)
+   ============================================================ */
+.tabbar {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  width: 100%;
+  background: rgba(5,8,16,0.85);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid var(--border-soft);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 90;
+}
+@media (max-width: 1023px) {
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); }
+}
+.tabbar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.tabbar-item span { font-size: 9px; font-weight: 600; letter-spacing: 0.02em; }
+.tabbar-item.active {
+  color: var(--needs);
+  filter: drop-shadow(0 0 6px rgba(103,232,249,0.6));
+}
+
+/* ============================================================
+   ALTRO: sheet fullscreen (mobile, aperta dalla tab bar)
+   ============================================================ */
+.altro-sheet {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(1200px 650px at 88% -8%, rgba(34,211,238,0.14) 0%, transparent 55%),
+    radial-gradient(900px 550px at 0% 100%, rgba(59,130,246,0.12) 0%, transparent 60%),
+    var(--bg);
+  z-index: 95;
+  flex-direction: column;
+}
+.altro-sheet.active { display: flex; }
+.altro-sheet-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: calc(env(safe-area-inset-top) + 18px) 18px 18px;
+}
+.altro-close {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.altro-sheet-links {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 24px calc(env(safe-area-inset-bottom) + 100px);
+}
+.altro-link {
+  width: 100%;
+  min-height: auto;
+  text-align: left;
+  padding: 22px 24px;
+  background: linear-gradient(160deg, rgba(30,41,59,0.55), rgba(15,23,42,0.35));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.altro-link .dot { width: 10px; height: 10px; border-radius: 50%; }
+.altro-link .dot.needs   { background: var(--needs); }
+.altro-link .dot.wants   { background: var(--wants); }
+.altro-link .dot.savings { background: var(--savings); }
 
 .quick-add {
   display: flex;
@@ -918,12 +1179,15 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 6px;
   background: var(--bg-elev-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   padding: 4px;
+}
+@media (min-width: 640px) {
+  .segmented { grid-template-columns: repeat(3, 1fr); }
 }
 .segmented button {
   padding: 10px;
@@ -973,8 +1237,11 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 
 .field-row {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 1fr;
   gap: var(--sp-md);
+}
+@media (min-width: 640px) {
+  .field-row { grid-template-columns: 1fr 2fr; }
 }
 
 /* ============================================================
@@ -1104,10 +1371,22 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 
 .scontrino-row {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 110px 36px;
+  grid-template-columns: 1fr 1fr;
   gap: var(--sp-sm);
+  row-gap: 6px;
   align-items: center;
   margin-bottom: 6px;
+}
+@media (min-width: 640px) {
+  .scontrino-row {
+    grid-template-columns: 2fr 1.2fr 110px 36px;
+    row-gap: var(--sp-sm);
+  }
+}
+.scontrino-row.review .sr-prodotto,
+.scontrino-row.review .sr-prezzo {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 1px var(--warning) inset;
 }
 .scontrino-total {
   display: flex;
@@ -1134,9 +1413,12 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 .heatmap {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 3px;
   font-family: var(--font-mono);
   font-size: 10px;
+}
+@media (min-width: 640px) {
+  .heatmap { gap: 6px; }
 }
 .heatmap .hm-head {
   text-align: center;
@@ -1161,10 +1443,10 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 }
 .hm-cell.empty { background: transparent; }
 .hm-cell.has { color: var(--text); }
-.hm-cell.lvl1 { background: #d4a24a22; }
-.hm-cell.lvl2 { background: #d4a24a55; }
-.hm-cell.lvl3 { background: #d4a24a99; color: #1a1408; }
-.hm-cell.lvl4 { background: #d4a24a; color: #1a1408; font-weight: 600; }
+.hm-cell.lvl1 { background: #22d3ee22; }
+.hm-cell.lvl2 { background: #22d3ee55; }
+.hm-cell.lvl3 { background: #22d3ee99; color: #04101f; }
+.hm-cell.lvl4 { background: #22d3ee; color: #04101f; font-weight: 600; }
 .hm-cell:hover { transform: scale(1.08); z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .hm-cell .tooltip {
   position: absolute;
@@ -1192,7 +1474,8 @@ table.data tbody tr:hover { background: var(--bg-elev-2); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
-body { min-width: 1240px; }
+/* Mobile-first: nessuno scroll orizzontale, mai. */
+html, body { overflow-x: hidden; }
 
 /* ============================================================
    FILE RIFERIMENTO — badge in basso a sinistra
@@ -1200,8 +1483,8 @@ body { min-width: 1240px; }
 .file-ref-badge {
   position: fixed;
   left: 16px;
-  bottom: 16px;
-  z-index: 9999;
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
+  z-index: 80;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1213,7 +1496,7 @@ body { min-width: 1240px; }
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-muted);
-  max-width: 360px;
+  max-width: min(360px, calc(100vw - 32px));
   user-select: none;
 }
 .file-ref-badge .check {
@@ -1224,7 +1507,7 @@ body { min-width: 1240px; }
   height: 18px;
   border-radius: 50%;
   background: var(--success);
-  color: #0a0a0c;
+  color: #050810;
   font-weight: 700;
   font-size: 12px;
   flex-shrink: 0;
@@ -1248,16 +1531,31 @@ body { min-width: 1240px; }
   letter-spacing: 0.5px;
 }
 
-/* il toast-host viene spostato in alto a sinistra quando c'è il badge */
-.toast-host { bottom: auto; top: 20px; left: 20px; right: auto; }
+/* il toast-host va sotto l'app-bar fissa, in alto a sinistra */
+.toast-host { bottom: auto; top: calc(env(safe-area-inset-top) + 64px); left: 16px; right: auto; }
+
+/* contenitori con griglie a larghezza fissa: consenti lo scroll interno
+   invece di rompere il layout della pagina */
+.tx-list, .heatmap, .scontrino-table { overflow-x: auto; }
 </style>
 </head>
 <body>
 
+<!-- ===== APP BAR ===== -->
+<header class="app-bar">
+  <button class="hamburger" id="btn-drawer-toggle" aria-label="Apri menu"
+          aria-expanded="false" aria-controls="app-drawer">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="app-bar-title">Smart Finance</div>
+  <div class="app-bar-month" id="appbar-month">—</div>
+</header>
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+
 <div class="app">
 
-  <!-- ===== SIDEBAR ===== -->
-  <aside class="sidebar">
+  <!-- ===== NAVIGATION DRAWER ===== -->
+  <aside class="sidebar" id="app-drawer">
     <div class="brand">Smart Finance</div>
     <div class="brand-sub">Tenuta spese</div>
 
@@ -1410,15 +1708,17 @@ body { min-width: 1240px; }
       <div class="page-header">
         <div>
           <h1 class="page-title">Scontrino OCR</h1>
-          <p class="page-subtitle">Trascina una foto o un PDF dello scontrino. Il sistema estrae automaticamente data, negozio, articoli e totale.</p>
+          <p class="page-subtitle">Carica il file dalla scansione documenti iPhone. Il sistema estrae automaticamente data, negozio, articoli e totale.</p>
         </div>
       </div>
 
       <div class="widget" style="margin-bottom: var(--sp-lg);">
         <div class="ocr-zone" id="ocr-zone">
           <div class="icon">⤓</div>
-          <div class="title">Trascina qui foto o PDF</div>
-          <div class="sub">oppure <strong style="color:var(--accent); text-decoration: underline;">clicca per selezionare</strong> · JPG/PNG/PDF · solo browser, mai inviato online</div>
+          <div class="title">Carica il file dalla scansione documenti iPhone.</div>
+          <div class="sub">
+            Trascina qui, oppure <strong style="color:var(--accent); text-decoration: underline;">tocca per scegliere</strong> · PDF/JPG/PNG · solo browser, mai inviato online
+          </div>
           <input type="file" id="ocr-input" accept="image/*,application/pdf" style="display:none;" />
           <div class="ocr-progress" id="ocr-progress">
             <div class="ocr-progress-fill" id="ocr-progress-fill"></div>
@@ -1426,11 +1726,28 @@ body { min-width: 1240px; }
           <div class="ocr-status" id="ocr-status"></div>
         </div>
 
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: var(--sp-md);">
+          Scansiona lo scontrino con l'app <strong>File</strong> (⋯ in alto a destra →
+          Scansiona documenti) o con <strong>Note</strong>, salvalo, poi carica qui il file.
+        </p>
+
         <div class="ocr-preview" id="ocr-preview">
           <div class="section-title" style="margin-top: var(--sp-lg);">
             Anteprima estratta
             <span class="section-meta">verifica e correggi prima di registrare</span>
           </div>
+
+          <!-- Esito dei checkpoint di validazione: errori bloccanti e avvisi. -->
+          <div id="ocr-alerts"></div>
+
+          <!-- Fallback: testo grezzo riconosciuto, per inserimento manuale
+               quando il parsing non riesce a strutturare le voci. -->
+          <details id="ocr-raw-wrap" style="display:none; margin-bottom: var(--sp-md);">
+            <summary style="cursor:pointer; color: var(--text-muted); font-size: 12px;">
+              Mostra il testo grezzo letto dall'OCR
+            </summary>
+            <pre id="ocr-raw" style="white-space:pre-wrap; word-break:break-word; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,.25); padding: 10px; border-radius: 8px; max-height: 240px; overflow:auto; margin-top: 8px;"></pre>
+          </details>
 
           <div class="form-row three">
             <div class="form-group">
@@ -1677,6 +1994,18 @@ body { min-width: 1240px; }
           <button class="btn btn-danger-outline" id="btn-reset-tutto" style="margin-left: auto;">Reset totale</button>
         </div>
       </div>
+
+      <div class="widget" style="margin-top: var(--sp-lg);">
+        <div class="section-title">Info app</div>
+        <p style="color: var(--text-muted);">
+          Versione <strong id="app-version-label" style="color: var(--text);"></strong><br />
+          <span id="app-version-note" style="font-size: 12px;"></span>
+        </p>
+        <button class="btn btn-secondary" id="btn-aggiorna-app">Cerca aggiornamenti</button>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
+          Svuota la cache dell'app e ricarica l'ultima versione pubblicata. I tuoi dati non vengono toccati.
+        </p>
+      </div>
     </section>
 
   </main>
@@ -1684,6 +2013,46 @@ body { min-width: 1240px; }
 
 <!-- ===== FAB Quick Add ===== -->
 <button class="fab" id="fab-add" title="Nuova spesa">+</button>
+
+<!-- ===== BOTTOM TAB BAR (solo mobile) ===== -->
+<nav class="tabbar" id="app-tabbar">
+  <button class="nav-item tabbar-item" data-view="dashboard" aria-label="Dashboard">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+    <span>Home</span>
+  </button>
+  <button class="nav-item tabbar-item" data-view="storico" aria-label="Movimenti">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+    <span>Movimenti</span>
+  </button>
+  <button class="nav-item tabbar-item" data-view="scontrino" aria-label="Scontrino">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+    <span>Scontrino</span>
+  </button>
+  <button class="nav-item tabbar-item" data-view="prodotti" aria-label="Prodotti">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+    <span>Prodotti</span>
+  </button>
+  <button class="tabbar-item" id="btn-tabbar-altro" aria-label="Altro" aria-haspopup="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+    <span>Altro</span>
+  </button>
+</nav>
+
+<!-- ===== ALTRO: sheet fullscreen (mobile) ===== -->
+<div class="altro-sheet" id="altro-sheet">
+  <div class="altro-sheet-header">
+    <button class="altro-close" id="btn-altro-close" aria-label="Chiudi">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+  <div class="altro-sheet-links">
+    <button class="nav-item altro-link" data-view="needs"><span class="dot needs"></span>Needs</button>
+    <button class="nav-item altro-link" data-view="wants"><span class="dot wants"></span>Wants</button>
+    <button class="nav-item altro-link" data-view="savings"><span class="dot savings"></span>Savings</button>
+    <button class="nav-item altro-link" data-view="cambio-mese">Cambio mese</button>
+    <button class="nav-item altro-link" data-view="impostazioni">Impostazioni</button>
+  </div>
+</div>
 
 <!-- ===== MODAL: Quick Add ===== -->
 <div class="modal-backdrop" id="modal-quickadd">
@@ -1767,6 +2136,15 @@ body { min-width: 1240px; }
 </div>
 
 <script>
+/* ============================================================
+   VERSIONE APP
+   Da aggiornare ad ogni modifica rilevante, insieme a CACHE_VERSION
+   in sw.js: serve a verificare da Impostazioni se il telefono ha
+   scaricato l'ultima versione pubblicata.
+   ============================================================ */
+const APP_VERSION = '2026.08.29h';
+const APP_BUILD_NOTE = 'Scontrino: solo caricamento file da scansione iPhone + verifica totale prima del salvataggio';
+
 /* ============================================================
    STATO + MIGRAZIONE
    ============================================================ */
@@ -1993,7 +2371,7 @@ function escapeHtml(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-const MACRO_COLOR = { needs: '#d4a24a', wants: '#c98a2e', savings: '#6b8e5a' };
+const MACRO_COLOR = { needs: '#67e8f9', wants: '#3b82f6', savings: '#818cf8' };
 const MACRO_LABEL = { needs: 'Needs', wants: 'Wants', savings: 'Savings' };
 
 function shadeColor(hex, idx, total) {
@@ -2128,7 +2506,8 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     const view = btn.dataset.view;
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    btn.classList.add('active');
+    // Drawer e tab bar condividono lo stesso data-view: sincronizza l'evidenziazione su entrambi.
+    document.querySelectorAll(`.nav-item[data-view="${view}"]`).forEach(b => b.classList.add('active'));
     document.getElementById('view-' + view).classList.add('active');
     const fn = VIEW_RENDERERS[view];
     if (fn) fn();
@@ -2139,6 +2518,90 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 function vaiA(view) {
   document.querySelector(`.nav-item[data-view="${view}"]`)?.click();
 }
+
+/* ============================================================
+   NAVIGATION DRAWER (solo shell di presentazione:
+   nessuna modifica al routing o alla logica di business)
+   ============================================================ */
+const drawerEl       = document.getElementById('app-drawer');
+const drawerBackdrop = document.getElementById('drawer-backdrop');
+const drawerToggle   = document.getElementById('btn-drawer-toggle');
+
+function isDrawerOpen() { return drawerEl.classList.contains('open'); }
+function apriDrawer() {
+  drawerEl.classList.add('open');
+  drawerBackdrop.classList.add('active');
+  document.body.classList.add('drawer-open');
+  drawerToggle.setAttribute('aria-expanded', 'true');
+}
+function chiudiDrawer() {
+  drawerEl.classList.remove('open');
+  drawerBackdrop.classList.remove('active');
+  document.body.classList.remove('drawer-open');
+  drawerToggle.setAttribute('aria-expanded', 'false');
+}
+
+drawerToggle.addEventListener('click', () => isDrawerOpen() ? chiudiDrawer() : apriDrawer());
+drawerBackdrop.addEventListener('click', chiudiDrawer);
+
+// ===== Altro: sheet fullscreen (tab bar mobile) =====
+const altroSheet    = document.getElementById('altro-sheet');
+const tabbarAltroBtn = document.getElementById('btn-tabbar-altro');
+function apriAltro() { altroSheet.classList.add('active'); tabbarAltroBtn?.classList.add('active'); }
+function chiudiAltro() { altroSheet.classList.remove('active'); tabbarAltroBtn?.classList.remove('active'); }
+tabbarAltroBtn?.addEventListener('click', () => altroSheet.classList.contains('active') ? chiudiAltro() : apriAltro());
+document.getElementById('btn-altro-close')?.addEventListener('click', chiudiAltro);
+altroSheet?.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', chiudiAltro));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && altroSheet?.classList.contains('active')) chiudiAltro();
+});
+
+// Chiude il drawer dopo la selezione di una voce di navigazione.
+// Listener aggiuntivo: il routing esistente resta intatto e gira per primo.
+document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', chiudiDrawer));
+
+// Escape chiude il drawer (convive con il listener esistente dei modal).
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && isDrawerOpen()) chiudiDrawer();
+});
+
+// Gesture touch: edge-swipe verso destra per aprire, swipe verso sinistra per chiudere.
+const SWIPE_EDGE   = 24;   // zona dal bordo sinistro (px) per iniziare l'apertura
+const SWIPE_COMMIT = 60;   // spostamento orizzontale minimo (px)
+const SWIPE_RATIO  = 1.5;  // dominanza orizzontale richiesta rispetto alla verticale
+let swipeStart = null;
+
+document.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  if (!isDrawerOpen() && t.clientX <= SWIPE_EDGE) {
+    swipeStart = { x: t.clientX, y: t.clientY, mode: 'open' };
+  } else if (isDrawerOpen()) {
+    swipeStart = { x: t.clientX, y: t.clientY, mode: 'close' };
+  } else {
+    swipeStart = null;
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+  if (!swipeStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipeStart.x;
+  const dy = t.clientY - swipeStart.y;
+  if (Math.abs(dx) >= SWIPE_COMMIT && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO) {
+    if (swipeStart.mode === 'open'  && dx > 0) apriDrawer();
+    if (swipeStart.mode === 'close' && dx < 0) chiudiDrawer();
+  }
+  swipeStart = null;
+}, { passive: true });
+
+// Mese corrente nell'app-bar: specchia #current-month-label (nel drawer)
+// senza toccare i renderer che lo aggiornano.
+const appbarMonthSrc = document.getElementById('current-month-label');
+const appbarMonthDst = document.getElementById('appbar-month');
+const syncAppbarMonth = () => { appbarMonthDst.textContent = appbarMonthSrc.textContent; };
+new MutationObserver(syncAppbarMonth)
+  .observe(appbarMonthSrc, { childList: true, characterData: true, subtree: true });
+syncAppbarMonth();
 
 /* ============================================================
    QUICK ADD (data entry contestuale)
@@ -2420,7 +2883,7 @@ function renderDonut() {
   if (donutState.level === 'macro') {
     labels = ['Needs','Wants','Savings'];
     data = ['needs','wants','savings'].map(id => spesoMacro(id));
-    colors = ['#d4a24a','#c98a2e','#6b8e5a'];
+    colors = ['#67e8f9','#3b82f6','#818cf8'];
     center.crumb.textContent = 'Totale';
     center.label.textContent = stato.meseCorrente;
     center.value.textContent = fmt(data.reduce((a,b)=>a+b,0));
@@ -2446,10 +2909,10 @@ function renderDonut() {
       datasets: [{
         data,
         backgroundColor: colors,
-        borderColor: '#0a0a0c',
+        borderColor: '#050810',
         borderWidth: 3,
         hoverOffset: 14,
-        hoverBorderColor: '#131318'
+        hoverBorderColor: '#0b1225'
       }]
     },
     options: {
@@ -2460,7 +2923,7 @@ function renderDonut() {
       plugins: {
         legend: {
           position: 'bottom',
-          labels: { color: '#9a978f', font: { family: 'Inter', size: 11 }, boxWidth: 10, padding: 10 }
+          labels: { color: '#94a3b8', font: { family: 'Sora', size: 11 }, boxWidth: 10, padding: 10 }
         },
         tooltip: { callbacks: { label: (ctx) => ctx.label + ': ' + fmt(ctx.parsed) } }
       },
@@ -2556,19 +3019,19 @@ function renderChartAndamento() {
     data: {
       labels: mesi,
       datasets: [
-        { label: 'Needs',   data: stato.archivioMesi.map(m => m.spesoNeeds   || 0), borderColor: '#d4a24a', backgroundColor: '#d4a24a33', tension: 0.35, borderWidth: 2, fill: true, pointRadius: 3 },
-        { label: 'Wants',   data: stato.archivioMesi.map(m => m.spesoWants   || 0), borderColor: '#c98a2e', backgroundColor: '#c98a2e33', tension: 0.35, borderWidth: 2, fill: true, pointRadius: 3 },
-        { label: 'Savings', data: stato.archivioMesi.map(m => m.versatoSavings || 0), borderColor: '#6b8e5a', backgroundColor: '#6b8e5a33', tension: 0.35, borderWidth: 2, fill: true, pointRadius: 3 }
+        { label: 'Needs',   data: stato.archivioMesi.map(m => m.spesoNeeds   || 0), borderColor: '#67e8f9', backgroundColor: '#67e8f933', tension: 0.35, borderWidth: 2, fill: true, pointRadius: 3 },
+        { label: 'Wants',   data: stato.archivioMesi.map(m => m.spesoWants   || 0), borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.35, borderWidth: 2, fill: true, pointRadius: 3 },
+        { label: 'Savings', data: stato.archivioMesi.map(m => m.versatoSavings || 0), borderColor: '#818cf8', backgroundColor: '#818cf833', tension: 0.35, borderWidth: 2, fill: true, pointRadius: 3 }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#9a978f', font: { size: 11 } } } },
+      plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
       interaction: { intersect: false, mode: 'index' },
       scales: {
-        x: { ticks: { color: '#9a978f' }, grid: { color: '#1f1f26' } },
-        y: { ticks: { color: '#9a978f', callback: (v) => '€' + v }, grid: { color: '#1f1f26' } }
+        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.15)' } },
+        y: { ticks: { color: '#94a3b8', callback: (v) => '€' + v }, grid: { color: 'rgba(148,163,184,0.15)' } }
       }
     }
   });
@@ -2619,8 +3082,8 @@ function renderTopVoci() {
         tooltip: { callbacks: { label: (ctx) => fmt(ctx.parsed.x) } }
       },
       scales: {
-        x: { ticks: { color: '#9a978f', callback: v => '€' + v }, grid: { color: '#1f1f26' } },
-        y: { ticks: { color: '#9a978f', font: { size: 11 } }, grid: { display: false } }
+        x: { ticks: { color: '#94a3b8', callback: v => '€' + v }, grid: { color: 'rgba(148,163,184,0.15)' } },
+        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
       }
     }
   });
@@ -2806,17 +3269,17 @@ function drawGauge(canvasId, pct, color) {
     ctx.beginPath();
     ctx.arc(cx, cy, radius, start, end);
     ctx.lineWidth = 12;
-    ctx.strokeStyle = '#2a2a33';
+    ctx.strokeStyle = '#1e293b';
     ctx.lineCap = 'round';
     ctx.stroke();
     // value arc
     ctx.beginPath();
     ctx.arc(cx, cy, radius, start, cur);
-    ctx.strokeStyle = pct > 100 ? '#c14a4a' : (pct >= 80 ? '#c98a2e' : color);
+    ctx.strokeStyle = pct > 100 ? '#f87171' : (pct >= 80 ? '#fbbf24' : color);
     ctx.stroke();
     // text
-    ctx.fillStyle = '#ece9e2';
-    ctx.font = '600 24px JetBrains Mono';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '600 24px Space Mono';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(Math.round(pct) + '%', cx, cy - 4);
@@ -2853,13 +3316,13 @@ function drawTreemap(canvasId, macroId) {
           const i = c.dataIndex;
           return shadeColor(base, i, data.length);
         },
-        borderColor: '#0a0a0c',
+        borderColor: '#050810',
         borderWidth: 2,
         spacing: 2,
         labels: {
           display: true,
           color: '#fff',
-          font: { family: 'Inter', size: 12, weight: '600' },
+          font: { family: 'Sora', size: 12, weight: '600' },
           formatter: (c) => {
             const d = c.raw._data;
             return [d.nome, fmt(d.valore)];
@@ -2915,6 +3378,7 @@ const CATEGORIE_ALIMENTARI = [
 ];
 
 let ocrText = '';
+let ocrTotaleRiportato = null;   // totale letto sullo scontrino, per il controllo pre-salvataggio
 
 function renderScontrino() {
   if (!document.getElementById('sc-data').value) {
@@ -2926,10 +3390,11 @@ function renderScontrino() {
   aggiornaTotaleScontrino();
 }
 
-function aggiungiRigaScontrino(prodotto = '', categoria = 'Altro', prezzo = '') {
+function aggiungiRigaScontrino(prodotto = '', categoria = 'Altro', prezzo = '', review = false) {
   const wrap = document.getElementById('scontrino-rows');
   const div = document.createElement('div');
-  div.className = 'scontrino-row';
+  div.className = 'scontrino-row' + (review ? ' review' : '');
+  if (review) div.title = 'Bassa confidenza OCR — verifica prodotto e prezzo prima di registrare.';
   div.innerHTML = `
     <input type="text" class="sr-prodotto" placeholder="Nome prodotto" value="${escapeHtml(prodotto)}" />
     <select class="sr-categoria">
@@ -2963,6 +3428,10 @@ document.getElementById('btn-reset-scontrino').addEventListener('click', () => {
   aggiungiRigaScontrino();
   aggiornaTotaleScontrino();
   ocrText = '';
+  ocrTotaleRiportato = null;
+  document.getElementById('ocr-alerts').innerHTML = '';
+  document.getElementById('ocr-raw').textContent = '';
+  document.getElementById('ocr-raw-wrap').style.display = 'none';
 });
 
 // --- Drag & drop / file input ---
@@ -2981,9 +3450,17 @@ ocrZone.addEventListener('drop', e => {
   ocrZone.classList.remove('drag');
   if (e.dataTransfer.files.length) gestisciFileOCR(e.dataTransfer.files[0]);
 });
-ocrInput.addEventListener('change', e => {
-  if (e.target.files.length) gestisciFileOCR(e.target.files[0]);
-});
+// Il valore dell'input va azzerato dopo l'uso: altrimenti riselezionare lo
+// stesso file non emette un nuovo evento 'change' e sembra che l'app ignori
+// il tocco (tipico dopo un tentativo andato male che si vuole ripetere).
+function gestisciSelezioneFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (file) gestisciFileOCR(file);
+}
+
+ocrInput.addEventListener('change', gestisciSelezioneFile);
+
 
 async function gestisciFileOCR(file) {
   ocrPreview.classList.remove('active');
@@ -2998,58 +3475,88 @@ async function gestisciFileOCR(file) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
     }
 
-    let imageDataUrl;
-    if (file.type === 'application/pdf') {
-      ocrStatus.textContent = 'Rendering PDF…';
-      imageDataUrl = await renderPdfFirstPage(file);
-    } else {
-      imageDataUrl = await fileToDataUrl(file);
-    }
-
-    ocrStatus.textContent = 'Pre-processing immagine…';
-    const processedDataUrl = await preprocessReceiptImage(imageDataUrl);
-
     if (typeof Tesseract === 'undefined') {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
 
-    ocrStatus.textContent = 'OCR in corso…';
-    const text = await runTesseract(processedDataUrl, pct => {
-      ocrProgressFill.style.width = pct + '%';
-      ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%';
-    });
+    // Lo scanner documenti nativo di iOS (File → "Scansiona documenti", cioè
+    // VNDocumentCameraViewController: bordi automatici, correzione prospettiva)
+    // consegna un PDF con UNA PAGINA PER SCATTO. Vanno quindi processate tutte
+    // le pagine, non solo la prima, altrimenti di uno scontrino lungo scansionato
+    // in più riprese si perde tutto tranne il primo pezzo.
+    let pagine;
+    if (file.type === 'application/pdf') {
+      ocrStatus.textContent = 'Rendering PDF…';
+      pagine = await renderPdfPages(file);
+    } else {
+      pagine = [await fileToDataUrl(file)];
+    }
 
-    ocrText = text || '';
+    const testiPagina = [];
+    for (let p = 0; p < pagine.length; p++) {
+      const etichettaPag = pagine.length > 1 ? ` · pagina ${p + 1}/${pagine.length}` : '';
+      ocrStatus.textContent = 'Pre-processing immagine…' + etichettaPag;
+      const varianti = await preprocessReceiptImage(pagine[p]);
+      testiPagina.push(await ocrPaginaConRitentativi(varianti, etichettaPag));
+    }
+
+    // Le pagine si concatenano PRIMA del parsing: il TOTALE sta sull'ultima,
+    // le voci sulle precedenti, e i checkpoint di coerenza devono vederli insieme.
+    const testoCompleto = testiPagina.filter(Boolean).join('\n');
+    const parsed = parseScontrino(testoCompleto);
+
+    ocrText = testoCompleto;
+    ocrTotaleRiportato = parsed.totaleRiportato;
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
-    const parsed = parseScontrino(ocrText);
     popolaPreviewDaParser(parsed);
-
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
 
-    const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
-    const msg = conSconto
-      ? `OCR completato: ${parsed.righe.length} righe (${conSconto} con sconto applicato)`
-      : `OCR completato: ${parsed.righe.length} righe estratte`;
-    toast(msg, 'success');
+    // Riepilogo esplicito: mai un esito silenzioso.
+    if (parsed.errori.length) {
+      toast(parsed.errori[0], 'danger', 8000);
+    } else {
+      const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
+      const daVerificare = parsed.righeDaVerificare || 0;
+      let msg = `OCR completato: ${parsed.righe.length} voci estratte`;
+      if (conSconto) msg += `, ${conSconto} con sconto`;
+      if (daVerificare) msg += `, ${daVerificare} da verificare`;
+      toast(msg, daVerificare || parsed.avvisi.length ? 'warning' : 'success');
+    }
   } catch (e) {
     console.error(e);
     ocrStatus.textContent = '';
     ocrProgress.classList.remove('active');
-    toast('OCR fallito: ' + e.message, 'danger', 5000);
     ocrPreview.classList.add('active');
+    // Anche in caso di eccezione l'utente vede il motivo nel riquadro, non
+    // solo in un toast che scompare.
+    mostraEsitoOCR({ righe: [], errori: ['OCR fallito: ' + e.message], avvisi: [], totale: 0 });
+    toast('OCR fallito: ' + e.message, 'danger', 6000);
   }
 }
 
 /**
- * Pre-processing per migliorare la leggibilità OCR di foto da smartphone
- * o screenshot da PC: upscale a ~2000px lato lungo + grayscale + contrasto
- * lineare attorno alla media. Restituisce un dataURL PNG.
+ * Pre-processing per foto da smartphone. Produce DUE varianti della stessa
+ * immagine, così che l'OCR possa ritentare se la prima non produce voci:
+ *
+ *   binarizzata → upscale ~2000px → deskew → grayscale+contrasto →
+ *                 binarizzazione adattiva (Bradley/Wellner, soglia locale)
+ *   contrasto   → stessa pipeline SENZA binarizzazione
+ *
+ * La binarizzazione aiuta molto su foto con ombre/illuminazione irregolare,
+ * ma può distruggere il testo su scontrini sbiaditi o sovraesposti: per
+ * questo viene scartata automaticamente se il risultato è degenere (quasi
+ * tutto bianco o quasi tutto nero) e resta comunque disponibile la variante
+ * a solo contrasto come fallback.
+ *
+ * Ritorna { binarizzata, contrasto, originale } (dataURL PNG). Ogni step che
+ * fallisce degrada silenziosamente al risultato dello step precedente.
  */
 async function preprocessReceiptImage(dataUrl) {
   return new Promise((resolve) => {
+    const fallback = { binarizzata: dataUrl, contrasto: dataUrl, originale: dataUrl };
     const img = new Image();
     img.onload = () => {
       try {
@@ -3058,40 +3565,197 @@ async function preprocessReceiptImage(dataUrl) {
         const scale = longSide > 0 ? Math.min(3, Math.max(1, TARGET_LONG / longSide)) : 1;
         const w = Math.round(img.naturalWidth * scale);
         const h = Math.round(img.naturalHeight * scale);
-        const canvas = document.createElement('canvas');
+
+        let canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
-        const ctx = canvas.getContext('2d');
+        let ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
 
-        const imgData = ctx.getImageData(0, 0, w, h);
+        // --- deskew ---
+        try {
+          const skew = estimateSkewAngle(canvas);
+          if (Math.abs(skew) > 0.2 && Math.abs(skew) < 15) {
+            canvas = rotateCanvas(canvas, -skew);
+            ctx = canvas.getContext('2d');
+          }
+        } catch (err) {
+          console.warn('Deskew fallito, proseguo senza:', err);
+        }
+
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = imgData.data;
 
-        // calcolo media luminosità per ancorare il contrasto
+        // --- grayscale + contrasto lineare attorno alla media ---
         let sum = 0;
         for (let i = 0; i < d.length; i += 4) {
-          sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          d[i] = d[i + 1] = d[i + 2] = gray;
+          sum += gray;
         }
         const mean = sum / (d.length / 4);
         const CONTRAST = 1.5;
         for (let i = 0; i < d.length; i += 4) {
-          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          let v = (gray - mean) * CONTRAST + mean;
+          let v = (d[i] - mean) * CONTRAST + mean;
           if (v < 0) v = 0; else if (v > 255) v = 255;
           d[i] = d[i + 1] = d[i + 2] = v;
         }
+
         ctx.putImageData(imgData, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
+        const contrastoUrl = canvas.toDataURL('image/png');
+
+        // --- binarizzazione adattiva su una copia dei pixel ---
+        let binarizzataUrl = contrastoUrl;
+        try {
+          const binData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          adaptiveBinarizeInPlace(binData, canvas.width, canvas.height);
+          // Guardia anti-degenerazione: se l'inchiostro è quasi assente o
+          // copre quasi tutto, la binarizzazione ha distrutto il testo.
+          const inkRatio = misuraInchiostro(binData);
+          if (inkRatio >= 0.005 && inkRatio <= 0.45) {
+            ctx.putImageData(binData, 0, 0);
+            binarizzataUrl = canvas.toDataURL('image/png');
+          } else {
+            console.warn('Binarizzazione degenere (ink ratio ' + inkRatio.toFixed(3) + '), uso solo contrasto.');
+          }
+        } catch (err) {
+          console.warn('Binarizzazione adattiva fallita, uso solo contrasto:', err);
+        }
+
+        resolve({ binarizzata: binarizzataUrl, contrasto: contrastoUrl, originale: dataUrl });
       } catch (err) {
         console.warn('Pre-processing fallito, uso immagine originale:', err);
-        resolve(dataUrl);
+        resolve(fallback);
       }
     };
-    img.onerror = () => resolve(dataUrl);
+    img.onerror = () => resolve(fallback);
     img.src = dataUrl;
   });
+}
+
+/** Frazione di pixel "inchiostro" (scuri) su un ImageData binarizzato. */
+function misuraInchiostro(imgData) {
+  const d = imgData.data;
+  let ink = 0;
+  const tot = d.length / 4;
+  for (let i = 0; i < d.length; i += 4) if (d[i] < 128) ink++;
+  return tot ? ink / tot : 0;
+}
+
+/**
+ * Stima l'angolo di inclinazione (in gradi, positivo = orario) cercando,
+ * su una copia ridotta e binarizzata dell'immagine, l'angolo di rotazione
+ * che massimizza la varianza del profilo di proiezione orizzontale
+ * (le righe di testo allineate creano bande alternate dense/vuote).
+ */
+function estimateSkewAngle(sourceCanvas) {
+  const SMALL_W = 360;
+  const ratio = SMALL_W / sourceCanvas.width;
+  const sw = SMALL_W;
+  const sh = Math.max(1, Math.round(sourceCanvas.height * ratio));
+  const small = document.createElement('canvas');
+  small.width = sw;
+  small.height = sh;
+  const sctx = small.getContext('2d');
+  sctx.drawImage(sourceCanvas, 0, 0, sw, sh);
+  const dd = sctx.getImageData(0, 0, sw, sh).data;
+
+  let sum = 0;
+  const gray = new Float64Array(sw * sh);
+  for (let i = 0, p = 0; i < dd.length; i += 4, p++) {
+    const g = 0.299 * dd[i] + 0.587 * dd[i + 1] + 0.114 * dd[i + 2];
+    gray[p] = g;
+    sum += g;
+  }
+  const mean = sum / (sw * sh);
+  const bin = new Uint8Array(sw * sh);
+  for (let p = 0; p < gray.length; p++) bin[p] = gray[p] < mean ? 1 : 0; // 1 = inchiostro
+
+  let bestAngle = 0, bestScore = -1;
+  for (let a = -8; a <= 8; a += 0.5) {
+    const rad = a * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const rows = new Float64Array(sh);
+    for (let y = 0; y < sh; y++) {
+      const rowOff = y * sw;
+      for (let x = 0; x < sw; x++) {
+        if (!bin[rowOff + x]) continue;
+        const cx = x - sw / 2, cy = y - sh / 2;
+        const ry = -cx * sin + cy * cos;
+        const rowIdx = Math.round(ry + sh / 2);
+        if (rowIdx >= 0 && rowIdx < sh) rows[rowIdx]++;
+      }
+    }
+    let m = 0;
+    for (let i = 0; i < sh; i++) m += rows[i];
+    m /= sh;
+    let variance = 0;
+    for (let i = 0; i < sh; i++) { const dv = rows[i] - m; variance += dv * dv; }
+    if (variance > bestScore) { bestScore = variance; bestAngle = a; }
+  }
+  return bestAngle;
+}
+
+/** Ruota un canvas attorno al centro di `angleDeg` gradi, sfondo bianco. */
+function rotateCanvas(srcCanvas, angleDeg) {
+  const rad = angleDeg * Math.PI / 180;
+  const w = srcCanvas.width, h = srcCanvas.height;
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#fff';
+  octx.fillRect(0, 0, w, h);
+  octx.translate(w / 2, h / 2);
+  octx.rotate(rad);
+  octx.drawImage(srcCanvas, -w / 2, -h / 2);
+  return out;
+}
+
+/**
+ * Binarizzazione adattiva in-place (algoritmo di Bradley/Wellner via
+ * integral image): ogni pixel diventa nero/bianco confrontandolo con la
+ * media locale in una finestra ~w/8, così zone con illuminazione/ombre
+ * disomogenee (tipiche delle foto da smartphone) restano leggibili.
+ */
+function adaptiveBinarizeInPlace(imgData, w, h) {
+  const d = imgData.data;
+  const gray = new Float64Array(w * h);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) gray[p] = d[i];
+
+  const integral = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let rowSum = 0;
+    const rowOut = (y + 1) * (w + 1);
+    const rowPrev = y * (w + 1);
+    for (let x = 0; x < w; x++) {
+      rowSum += gray[y * w + x];
+      integral[rowOut + x + 1] = integral[rowPrev + x + 1] + rowSum;
+    }
+  }
+
+  const S = Math.max(15, Math.floor(w / 8));
+  const s2 = Math.floor(S / 2);
+  const T = 0.85; // pixel < 85% della media locale → nero
+
+  for (let y = 0; y < h; y++) {
+    const y1 = Math.max(0, y - s2), y2 = Math.min(h - 1, y + s2);
+    for (let x = 0; x < w; x++) {
+      const x1 = Math.max(0, x - s2), x2 = Math.min(w - 1, x + s2);
+      const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+      const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
+                - integral[y1 * (w + 1) + (x2 + 1)]
+                - integral[(y2 + 1) * (w + 1) + x1]
+                + integral[y1 * (w + 1) + x1];
+      const localMean = sum / count;
+      const p = y * w + x;
+      const val = gray[p] < localMean * T ? 0 : 255;
+      const di = p * 4;
+      d[di] = d[di + 1] = d[di + 2] = val;
+    }
+  }
 }
 
 /**
@@ -3099,7 +3763,7 @@ async function preprocessReceiptImage(dataUrl) {
  * preserve_interword_spaces (cruciali per mantenere allineate le colonne
  * "descrizione" + "EURO" dello scontrino).
  */
-async function runTesseract(dataUrl, onProgress) {
+async function runTesseract(dataUrl, onProgress, psm) {
   // Tesseract v5: createWorker è async e accetta direttamente la lingua
   let worker;
   try {
@@ -3111,7 +3775,9 @@ async function runTesseract(dataUrl, onProgress) {
       }
     });
     await worker.setParameters({
-      tessedit_pageseg_mode: '6',          // assume a single uniform block of text (scontrino in colonna)
+      // 6 = blocco uniforme di testo (scontrino in colonna); 4 = colonna di
+      // testo a larghezza variabile, spesso migliore su foto storte/curve.
+      tessedit_pageseg_mode: String(psm || 6),
       preserve_interword_spaces: '1',
       user_defined_dpi: '300'
     });
@@ -3142,52 +3808,241 @@ function fileToDataUrl(file) {
   });
 }
 
-async function renderPdfFirstPage(file) {
+/**
+ * OCR di UNA pagina con ritentativi in cascata: se una preparazione non
+ * estrae voci si riprova con un'altra variante dell'immagine e una
+ * segmentazione di pagina diversa. Su foto da smartphone è la differenza
+ * fra "zero voci" e un'estrazione completa, quindi vale il tempo extra.
+ * Ritorna il testo del tentativo che ha prodotto più voci.
+ */
+async function ocrPaginaConRitentativi(varianti, etichettaPag) {
+  const tentativi = [
+    { url: varianti.binarizzata, psm: 6 },
+    { url: varianti.contrasto,   psm: 6 },
+    { url: varianti.contrasto,   psm: 4 }
+  ];
+
+  let testoMigliore = '';
+  let vociMigliori = -1;
+  for (let t = 0; t < tentativi.length; t++) {
+    const etichetta = (etichettaPag || '') + (t > 0 ? ` (tentativo ${t + 1})` : '');
+    ocrStatus.textContent = 'OCR in corso…' + etichetta;
+    ocrProgressFill.style.width = '0%';
+
+    const text = await runTesseract(tentativi[t].url, pct => {
+      ocrProgressFill.style.width = pct + '%';
+      ocrStatus.textContent = 'Riconoscimento testo… ' + pct + '%' + etichetta;
+    }, tentativi[t].psm);
+
+    const candidato = parseScontrino(text || '');
+    if (candidato.righe.length > vociMigliori) {
+      vociMigliori = candidato.righe.length;
+      testoMigliore = text || '';
+    }
+    if (vociMigliori > 0 && !candidato.errori.length) break;
+  }
+  return testoMigliore;
+}
+
+/**
+ * Renderizza TUTTE le pagine di un PDF in dataURL PNG. Serve per l'output
+ * dello scanner documenti nativo iOS, che produce una pagina per scatto.
+ * Cap prudenziale: l'OCR di ogni pagina costa secondi su telefono.
+ */
+async function renderPdfPages(file, maxPagine = 8) {
   if (typeof pdfjsLib === 'undefined') {
     throw new Error('pdf.js non caricato');
   }
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 2 });
-  const canvas = document.createElement('canvas');
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-  return canvas.toDataURL('image/png');
+  const n = Math.min(pdf.numPages, maxPagine);
+  const out = [];
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    out.push(canvas.toDataURL('image/png'));
+  }
+  if (!out.length) throw new Error('PDF senza pagine leggibili.');
+  return out;
+}
+
+/* ============================================================
+   PARSER SCONTRINO — testo libero, nessun layout fisso
+   ============================================================
+   Lo scontrino fotografato non ha coordinate né template: l'unica
+   struttura affidabile è "descrizione a sinistra, importo a destra".
+   Il parser quindi NON assume posizioni fisse, ma per ogni riga:
+
+     1) normalizza il testo (spazi unicode, valuta, rumore OCR);
+     2) individua TUTTI i token monetari della riga e prende il più a
+        destra come importo di riga (colonna prezzo);
+     3) classifica la riga per contesto (totale / sconto di riga /
+        sconto globale / quantità / intestazione / rumore / prodotto);
+     4) ricuce i nomi prodotto andati a capo (riga senza importo
+        seguita da riga con solo importo);
+     5) assegna a ogni voce una confidence e la marca per revisione.
+
+   Ritorna sempre un oggetto con `errori` e `avvisi` popolati dai
+   checkpoint di validazione: il chiamante non deve mai proseguire in
+   silenzio quando l'estrazione fallisce.
+   ============================================================ */
+
+/** Normalizza cifre confuse dall'OCR (solo dentro token numerici). */
+function normalizzaCifreOCR(tok) {
+  return tok
+    .replace(/[OoQ]/g, '0')
+    .replace(/[IlL|!\[\]]/g, '1')
+    .replace(/[Ss]/g, '5')
+    .replace(/[Bb]/g, '8')
+    .replace(/[Zz]/g, '2')
+    .replace(/[Gg]/g, '6')
+    .replace(/[Tt]/g, '7');
 }
 
 /**
- * Parser scontrino — struttura "tipo Esselunga / Coop / Conad":
- *   <prodotto>  [codice IVA *a/*b/*c/*d]   <prezzo>
- *   [SCONTO ...                              <importo>-S]
- *   ...
- *   TOTALE EURO                              <totale>
+ * Normalizza una riga OCR: spazi unicode, simboli di valuta, separatori
+ * decimali esotici, rumore ai bordi. NON tocca le lettere del nome.
+ */
+function normalizzaRigaOCR(riga) {
+  return String(riga)
+    .replace(/[     \t]/g, ' ')  // spazi unicode → spazio
+    .replace(/[‐-―−]/g, '-')               // trattini tipografici → '-'
+    .replace(/[‘’‛]/g, "'")
+    .replace(/[€£]|\bEUR\b/gi, ' ')                        // valuta: irrilevante per il valore
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Trova tutti gli importi in una riga, in ordine di apparizione.
+ * Tre passate, dalla più affidabile alla più permissiva; si usa la prima
+ * che produce risultati, così il fuzzy non inquina righe già pulite.
  *
- * Strategia:
- *  1) Normalizza il testo (spazi, OCR-noise, marker IVA "*a").
- *  2) Per ogni riga estrae il prezzo finale (numero con virgola/punto e 2 decimali).
- *  3) Le righe SCONTO / BUONO / coupon vengono sottratte dal prodotto precedente.
- *     prezzo_finale = prezzo_lordo − somma(sconti).
- *  4) TOTALE viene usato come check (e fallback se manca).
+ * Ritorna [{ start, end, value, negativo, fuzzy }].
+ */
+function trovaImporti(riga) {
+  const out = [];
+
+  // Passata 1 — token pulito: 1-4 cifre, separatore, 2 decimali.
+  const strict = /(-)?\s*(\d{1,4})\s*[.,]\s*(\d{2})(?!\d)/g;
+  let m;
+  while ((m = strict.exec(riga)) !== null) {
+    out.push({
+      start: m.index, end: strict.lastIndex,
+      value: parseFloat(m[2] + '.' + m[3]),
+      negativo: m[1] === '-', fuzzy: false
+    });
+  }
+  if (out.length) return out;
+
+  // Passata 2 — cifre confuse dall'OCR (O→0, I/l→1, S→5, B→8…).
+  // Richiede almeno una cifra vera nel token per limitare i falsi positivi
+  // su parole tutte-lettere (es. "ESS.SL" non deve diventare un importo).
+  const fuzzy = /(-)?\s*([\dOoQIlL|!\[\]SsBbZzGgTt]{1,4})\s*[.,;:]\s*([\dOoQIlL|!\[\]SsBbZzGgTt]{2})(?![\dOoQIlL|!SsBbZzGgTt])/g;
+  while ((m = fuzzy.exec(riga)) !== null) {
+    const intero = normalizzaCifreOCR(m[2]);
+    const dec = normalizzaCifreOCR(m[3]);
+    if (!/\d/.test(m[2] + m[3])) continue;         // nessuna cifra vera → scarta
+    const value = parseFloat(intero + '.' + dec);
+    if (isNaN(value)) continue;
+    out.push({ start: m.index, end: fuzzy.lastIndex, value, negativo: m[1] === '-', fuzzy: true });
+  }
+  if (out.length) return out;
+
+  // Passata 3 — separatore decimale perso del tutto ("1 98" invece di "1,98").
+  const spaced = /(-)?\s*(\d{1,4})\s(\d{2})(?!\d)/g;
+  while ((m = spaced.exec(riga)) !== null) {
+    out.push({
+      start: m.index, end: spaced.lastIndex,
+      value: parseFloat(m[2] + '.' + m[3]),
+      negativo: m[1] === '-', fuzzy: true
+    });
+  }
+  return out;
+}
+
+/* --- Pattern di classificazione riga (case-insensitive su testo upper) --- */
+
+// Marker IVA in mezzo/fine riga: "*a".."*d", talvolta senza asterisco.
+const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
+
+// Rumore strutturale dello scontrino: mai un prodotto.
+const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|DI\s+CUI\s+IVA|RESTO|CONTANT|CARTA\s+(DI\s+)?(CREDITO|DEBITO|BANCOMAT|FEDELT)|CARTA\s*$|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DATA\s*[:.]|DATA\s+\d|ORA\s*[:.]|DOCUMENTO\s+COMMERC|DOCUMENTO|DI\s+VENDITA|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*I(VA)?[.:]|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI\b|SALDO\s+PUNTI|BARCODE|GRAZIE\b|ARRIVEDERCI|CODICE|TICKET\b|EAN\b|VIA\s|V\.LE|CORSO\s|PIAZZA\s|VIALE\s|LOC\.|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|MAESTRO\b|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT|TEL\.|WWW\.|HTTP)/i;
+
+// Riga del totale finale. Niente "TOTAL" nudo: è prefisso di marca reale
+// (es. "TOTAL VASO 2 450G", yogurt Total).
+const TOTAL_RE = /^(TOTALE\s+EURO|TOTALE\s+COMPLESSIVO|TOT\.?\s*EURO|TOT\s+VENDITA|TOTALE\s+DA\s+PAGARE|TOTALE\b\s*$|TOTALE\s+\d)/i;
+
+// Sconto legato al prodotto precedente (riga immediatamente sopra).
+const SCONTO_RIGA_RE = /^(SCONTO\b|SCONT\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|CARTA\s+FEDELT|FEDELTA|PROMO\b|PROMOZIONE\b|OFFERTA\b|\d+\s*%\s*SCONT)/i;
+
+// Buoni/coupon: valgono sull'intero scontrino, ovunque compaiano.
+const SCONTO_GLOBALE_RE = /^(BUONO\s+SPESA|BUONO\b|COUPON\b|VOUCHER\b|GIFT\s*CARD|SCONTO\s+TOTALE|SCONTO\s+SPESA)/i;
+
+// Intestazione di colonna.
+const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO|PREZZO\s*$)/i;
+
+/**
+ * Individua l'indice da cui iniziano davvero i prodotti, saltando il blocco
+ * di intestazione (nome negozio, indirizzo, P.IVA, titolo documento,
+ * data/ora): quel blocco non contiene mai un prezzo di riga vero (un civico
+ * come "16" o un CAP non sono un importo con due decimali), quindi si
+ * avanza finché la riga non ha né un importo plausibile né un marker
+ * esplicito di fine intestazione (riga colonne "DESCRIZIONE"/"IVA EURO"…).
+ * Tetto a 20 righe: oltre non ha senso continuare a scartare.
+ */
+function trovaInizioElenco(lines) {
+  const MAX_HEADER = Math.min(20, lines.length);
+  for (let i = 0; i < MAX_HEADER; i++) {
+    const lUp = lines[i].toUpperCase();
+    if (HEADER_RE.test(lUp)) return i + 1;        // riga colonne: i prodotti iniziano subito dopo
+    if (trovaImporti(lines[i]).length) return i;  // prima riga con un importo: è già un prodotto
+  }
+  return MAX_HEADER;
+}
+
+// Riga quantità/peso: "2 X 1,49", "0,530 KG X 2,99".
+const QTA_RE = /^\d+([.,]\d+)?\s*(KG|G|GR|LT|L|PZ|X)\b|^\d+([.,]\d+)?\s*[xX]\s*\d/i;
+
+// Sequenza numerica lunga isolata: barcode / codice articolo / P.IVA.
+const BARCODE_RE = /^[\d\s]{8,}$/;
+
+/**
+ * Parser principale. `txt` è il testo grezzo restituito da Tesseract.
+ * Ritorna { negozio, localita, data, totale, totaleRiportato, righe,
+ *           scontoComplessivo, righeDaVerificare, errori, avvisi, diagnostica }.
  */
 function parseScontrino(txt) {
-  const rawLines = txt.replace(/ /g, ' ').split(/\r?\n/);
-  // Pulisci e mantieni anche la versione "originale" della riga per estrarre il nome
-  const lines = rawLines.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const result = {
+    negozio: '', localita: '', data: '', totale: 0, totaleRiportato: null,
+    righe: [], scontoComplessivo: 0, righeDaVerificare: 0,
+    errori: [], avvisi: [],
+    diagnostica: { righeTotali: 0, righeConImporto: 0, righeScartate: 0, testoUtile: 0 }
+  };
 
-  const result = { negozio: '', localita: '', data: '', totale: 0, righe: [] };
+  const testo = String(txt || '');
+  const lines = testo.split(/\r?\n/).map(normalizzaRigaOCR).filter(Boolean);
+  result.diagnostica.righeTotali = lines.length;
+  result.diagnostica.testoUtile = testo.replace(/\s/g, '').length;
+
+  // ---------- Checkpoint 0: l'OCR ha letto qualcosa? ----------
+  if (result.diagnostica.testoUtile < 20 || lines.length < 3) {
+    result.errori.push('L\'OCR non ha letto testo utile dall\'immagine (foto sfocata, troppo scura o inquadratura parziale). Riprova con una foto più nitida, ben illuminata e con lo scontrino ben in piano.');
+    return result;
+  }
 
   // ---------- Negozio ----------
-  // Cerca nelle prime 8 righe non vuote: preferisce "S.P.A." / "S.R.L." / "SUPERMERCATO"
   for (const l of lines.slice(0, 10)) {
-    if (/S\.?\s*P\.?\s*A\.?|S\.?\s*R\.?\s*L\.?|SUPERMERCAT|IPERMERCAT|DISCOUNT|CONAD|ESSELUNGA|COOP\b|LIDL|EUROSPIN|CARREFOUR|PAM\b|PENNY|TIGRE|DESPAR/i.test(l)) {
+    if (/S\.?\s*P\.?\s*A\.?|S\.?\s*R\.?\s*L\.?|SUPERMERCAT|IPERMERCAT|DISCOUNT|CONAD|ESSELUNGA|COOP\b|LIDL|EUROSPIN|CARREFOUR|PAM\b|PENNY|TIGRE|DESPAR|BENNET|IPERAL|MD\b|TODIS|CRAI\b/i.test(l)) {
       result.negozio = capitalize(l.replace(/[*]+/g, '').trim());
       break;
     }
   }
-  // Fallback: prima riga "MAIUSCOLA" plausibile
   if (!result.negozio) {
     for (const l of lines.slice(0, 8)) {
       if (l.length >= 4 && l.length <= 40 &&
@@ -3201,117 +4056,243 @@ function parseScontrino(txt) {
 
   // ---------- Data ----------
   for (const l of lines) {
-    const md = l.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{2,4})/);
+    const md = l.match(/(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})/);
     if (md) {
       let [, dd, mm, yy] = md;
       if (yy.length === 2) yy = (parseInt(yy, 10) > 50 ? '19' : '20') + yy;
-      const iso = `${yy}-${mm}-${dd}`;
-      if (!isNaN(new Date(iso).getTime())) { result.data = iso; break; }
+      const g = parseInt(dd, 10), me = parseInt(mm, 10);
+      if (g >= 1 && g <= 31 && me >= 1 && me <= 12) {
+        const iso = `${yy}-${mm}-${dd}`;
+        if (!isNaN(new Date(iso).getTime())) { result.data = iso; break; }
+      }
     }
   }
 
-  // ---------- Regex ----------
-  // Prezzo a fine riga: opz. segno '-', cifre, virgola/punto, 2 decimali,
-  // opz. trattino finale e/o lettera "S" (suffisso "-S" tipico di sconti Esselunga).
-  const PRICE_RE = /(-?\d{1,4}[.,]\d{2})\s*(-)?\s*([A-Z])?\s*$/;
-  // Marker IVA in mezzo alla riga: "*a", "*b", "*c", "*d" — vanno tolti prima del match prezzo
-  const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
-
-  // Righe da ignorare totalmente
-  const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|RESTO|CONTANTI|CONTANTE|CARTA|BANCOMAT|POS|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*IVA\b|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI|BARCODE|GRAZIE\b|CODICE|TICKET\b|EAN\b|VIA\s|CORSO\s|PIAZZA\s|VIALE\s|DI\s+CUI\s+IVA|ARRIVEDERCI|AUTENTIC)/i;
-
-  // Riga del totale finale
-  const TOTAL_RE = /^(TOTALE\s+EURO|TOTAL[E]?\b|TOT\.?\s*EURO|TOTALE\s+COMPLESSIVO|TOT\s+VENDITA)/i;
-
-  // Riga di sconto/coupon — viene sottratta dal prodotto precedente
-  const SCONTO_RE = /^(SCONTO\b|BUONO\s+SPESA|BUONO\b|COUPON\b|RIDUZIONE\b|OMAGGIO\b|FIDATY\b|VOUCHER\b|CARTA\s+FEDELT|FEDELTA)/i;
-
-  // Riga "intestazione colonna" tipo "IVA EURO" o "DESCRIZIONE PREZZO"
-  const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO)/i;
-
+  // ---------- Scansione voci ----------
   let lastProductIdx = -1;
+  let totaleFound = false;
+  let nomeOrfano = '';   // nome andato a capo, in attesa dell'importo
 
-  for (let i = 0; i < lines.length; i++) {
-    const lOrig = lines[i];
-    // Versione "pulita" per il match: rimuove i tag IVA tipo "*a"
-    const l = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
+  const inizioElenco = trovaInizioElenco(lines);
+
+  for (let i = inizioElenco; i < lines.length; i++) {
+    // Rimuove tag IVA e marker isolati di fine riga ("*", "•").
+    const l = lines[i].replace(IVA_TAG_RE, '').replace(/[*•·]+\s*$/, '').replace(/\s+/g, ' ').trim();
+    if (!l) continue;
     const lUp = l.toUpperCase();
 
-    if (!l) continue;
-    if (HEADER_RE.test(lUp)) continue;
+    if (HEADER_RE.test(lUp) || BARCODE_RE.test(l)) { nomeOrfano = ''; continue; }
 
-    // TOTALE
+    const importi = trovaImporti(l);
+    if (importi.length) result.diagnostica.righeConImporto++;
+    // L'importo di riga è il token PIÙ A DESTRA (colonna prezzo), non il primo:
+    // così "SPUMA BIANCA 1,15LT ... 1,15" prende il prezzo, non il formato.
+    const imp = importi.length ? importi[importi.length - 1] : null;
+
+    // --- TOTALE ---
     if (TOTAL_RE.test(lUp)) {
-      const m = l.match(PRICE_RE);
-      if (m) {
-        const v = parseFloat(m[1].replace(',', '.'));
-        if (!isNaN(v)) result.totale = Math.max(result.totale, Math.abs(v));
+      if (imp) {
+        const v = Math.abs(imp.value);
+        result.totaleRiportato = result.totaleRiportato === null ? v : Math.max(result.totaleRiportato, v);
       }
+      totaleFound = true;
+      nomeOrfano = '';
       continue;
     }
 
-    if (SKIP_RE.test(lUp)) continue;
+    if (SKIP_RE.test(lUp)) { nomeOrfano = ''; continue; }
 
-    // SCONTO/BUONO esplicito → sottrae al prodotto precedente
-    if (SCONTO_RE.test(lUp)) {
-      const m = l.match(PRICE_RE);
-      if (m && lastProductIdx >= 0) {
-        const v = Math.abs(parseFloat(m[1].replace(',', '.')));
-        if (!isNaN(v) && v > 0) applicaSconto(result.righe[lastProductIdx], v);
+    // --- Buono/coupon: sconto sull'intero scontrino ---
+    if (SCONTO_GLOBALE_RE.test(lUp)) {
+      if (imp && imp.value > 0) {
+        result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(imp.value));
       }
+      nomeOrfano = '';
       continue;
     }
 
-    // Tentativo di estrarre <nome> + <prezzo>
-    const m = l.match(PRICE_RE);
-    if (!m) continue;
-
-    let valore = parseFloat(m[1].replace(',', '.'));
-    const isNegativeAmount = m[2] === '-' || m[1].startsWith('-') || /-S?$/i.test(m[0].trim());
-    if (isNaN(valore)) continue;
-
-    // Importi negativi senza parola "SCONTO" → trattali come sconto sul prodotto precedente
-    if (isNegativeAmount) {
-      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(valore));
+    // --- Sconto di riga: sottrae dal prodotto precedente ---
+    if (SCONTO_RIGA_RE.test(lUp)) {
+      if (imp && imp.value > 0) {
+        if (!totaleFound && lastProductIdx >= 0) {
+          applicaSconto(result.righe[lastProductIdx], Math.abs(imp.value));
+        } else {
+          result.scontoComplessivo = round2(result.scontoComplessivo + Math.abs(imp.value));
+        }
+      }
+      nomeOrfano = '';
       continue;
     }
 
-    // Plausibilità prezzo unitario
-    if (valore <= 0 || valore > 999) continue;
+    // --- Riga quantità/peso: non è una voce a sé ---
+    if (QTA_RE.test(l)) { continue; }
 
-    // Estrai il nome prodotto dalla riga ORIGINALE (mantenendo eventuali maiuscole/punti)
-    // ma rimuovendo il tag IVA e il prezzo
-    let nomeRaw = lOrig.replace(IVA_TAG_RE, '').replace(/\s+/g, ' ').trim();
-    nomeRaw = nomeRaw.slice(0, nomeRaw.length - m[0].length).trim();
-    nomeRaw = nomeRaw.replace(/[\s,;:.\-]+$/, '');
+    // --- Riga senza importo: possibile nome andato a capo ---
+    if (!imp) {
+      const testoNome = pulisciNomeProdotto(l);
+      nomeOrfano = (testoNome && testoNome.length >= 3 && /[a-zA-Z]{3}/.test(testoNome)) ? testoNome : '';
+      continue;
+    }
 
-    // Scarta righe spurie (puro numero, sigle troppo corte, righe che iniziano con cifra → quantità)
-    if (!nomeRaw || nomeRaw.length < 2) continue;
-    if (/^\d+([.,]\d+)?\s*X\s*\d/i.test(nomeRaw)) continue; // "2 X 1,49"
-    if (/^[\d\s.,X]+$/i.test(nomeRaw)) continue;
+    // --- Importo negativo senza parola chiave: sconto sul prodotto sopra ---
+    if (imp.negativo) {
+      if (lastProductIdx >= 0) applicaSconto(result.righe[lastProductIdx], Math.abs(imp.value));
+      nomeOrfano = '';
+      continue;
+    }
+
+    // Plausibilità dell'importo come prezzo di una singola voce.
+    if (imp.value <= 0 || imp.value > 999) { result.diagnostica.righeScartate++; nomeOrfano = ''; continue; }
+
+    // Nome = tutto ciò che precede l'importo; se vuoto, si ricuce con la
+    // riga precedente rimasta orfana (nome lungo andato a capo).
+    let nome = pulisciNomeProdotto(l.slice(0, imp.start));
+    let ricucito = false;
+    if ((!nome || nome.length < 2) && nomeOrfano) { nome = nomeOrfano; ricucito = true; }
+    nomeOrfano = '';
+
+    if (!nome || nome.length < 2) { result.diagnostica.righeScartate++; continue; }
+    if (!/[a-zA-Z]{2}/.test(nome)) { result.diagnostica.righeScartate++; continue; }
+
+    // Confidence: penalizza correzioni OCR, nomi corti/sporchi, importi anomali.
+    let confidence = 1;
+    if (imp.fuzzy) confidence -= 0.35;
+    if (ricucito) confidence -= 0.1;
+    if (nome.length <= 3) confidence -= 0.25;
+    if (/\d{3,}/.test(nome)) confidence -= 0.3;
+    if (imp.value > 50) confidence -= 0.15;
+    confidence = Math.max(0, Math.min(1, confidence));
 
     result.righe.push({
-      prodotto: capitalize(nomeRaw),
-      categoria: indovinaCategoria(nomeRaw),
-      prezzo: round2(valore),
-      prezzoLordo: round2(valore),
-      sconto: 0
+      prodotto: capitalize(nome),
+      categoria: indovinaCategoria(nome),
+      prezzoBase: round2(imp.value),
+      prezzoLordo: round2(imp.value),   // alias retrocompatibile
+      sconto: 0,
+      prezzoFinale: round2(imp.value),
+      prezzo: round2(imp.value),        // alias retrocompatibile
+      confidence: round2(confidence),
+      needsReview: confidence < 0.7,
+      corretto: imp.fuzzy,
+      sorgente: 'ocr'
     });
     lastProductIdx = result.righe.length - 1;
   }
 
-  // Rimuovi prodotti azzerati (es. sconto >= prezzo lordo)
+  // Rimuove voci azzerate da uno sconto >= prezzo lordo.
   result.righe = result.righe.filter(r => r.prezzo > 0);
+  result.righeDaVerificare = result.righe.filter(r => r.needsReview).length;
 
-  if (!result.totale && result.righe.length) {
-    result.totale = result.righe.reduce((a, r) => a + r.prezzo, 0);
-  }
+  // ---------- Totale ----------
+  const sommaRighe = round2(result.righe.reduce((a, r) => a + r.prezzo, 0));
+  const atteso = round2(Math.max(0, sommaRighe - result.scontoComplessivo));
+  // Il totale stampato è già l'importo netto pagato (buoni inclusi): si usa
+  // così com'è; solo se manca lo si ricostruisce dalle righe.
+  result.totale = result.totaleRiportato !== null ? result.totaleRiportato : atteso;
+
+  validaEstrazione(result, sommaRighe, atteso);
   return result;
+}
+
+/** Ripulisce un nome prodotto da tag, marker e punteggiatura residua. */
+function pulisciNomeProdotto(s) {
+  return String(s || '')
+    .replace(IVA_TAG_RE, ' ')
+    .replace(/\*+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s\d{1,2}\s*%\s*$/, '')   // aliquota IVA a fine riga: "TOVAGL. ... 22%"
+    .replace(/^[\s,;:.\-]+/, '')
+    .replace(/[\s,;:.\-]+$/, '')
+    .trim();
+}
+
+/**
+ * Checkpoint di validazione. Popola `errori` (bloccanti: l'utente deve
+ * intervenire, niente prosecuzione silenziosa) e `avvisi` (da verificare).
+ */
+function validaEstrazione(result, sommaRighe, atteso) {
+  const d = result.diagnostica;
+
+  // C1 — nessuna voce estratta: errore bloccante.
+  if (result.righe.length === 0) {
+    result.errori.push(
+      d.righeConImporto === 0
+        ? 'Nessun importo riconosciuto nel testo letto: la foto probabilmente non è leggibile (sfocata, storta o con poco contrasto). Riprova, oppure inserisci le voci a mano.'
+        : `Riconosciuti ${d.righeConImporto} importi ma nessuna voce valida (nomi prodotto non leggibili). Controlla il testo grezzo qui sotto e inserisci le voci a mano.`
+    );
+    return;
+  }
+
+  // C2 — densità voci sospetta: molte righe, pochissime interpretate.
+  const densita = d.righeTotali ? result.righe.length / d.righeTotali : 0;
+  if (d.righeTotali >= 12 && densita < 0.2) {
+    result.avvisi.push(`Estratte solo ${result.righe.length} voci su ${d.righeTotali} righe lette: la foto potrebbe essere parzialmente illeggibile. Controlla che non manchino prodotti.`);
+  }
+
+  // C3 — coerenza totale calcolato vs totale riportato sullo scontrino.
+  if (result.totaleRiportato === null) {
+    result.avvisi.push(`Totale non trovato sullo scontrino: usato il totale calcolato dalle voci (${atteso.toFixed(2)}€). Verifica che corrisponda.`);
+  } else {
+    const delta = round2(Math.abs(atteso - result.totaleRiportato));
+    // L'aritmetica di uno scontrino è esatta al centesimo: la sola differenza
+    // legittima è l'arrotondamento degli sconti di riga (pochi centesimi).
+    // Tolleranza FISSA, non percentuale: altrimenti su uno scontrino da 200€
+    // una voce mancante da 2€ resterebbe nascosta.
+    const tolleranza = 0.05;
+    if (delta > tolleranza) {
+      const dett = `somma voci ${sommaRighe.toFixed(2)}€` +
+        (result.scontoComplessivo > 0 ? ` − sconti ${result.scontoComplessivo.toFixed(2)}€ = ${atteso.toFixed(2)}€` : '') +
+        `, totale sullo scontrino ${result.totaleRiportato.toFixed(2)}€`;
+      const msg = `Il totale non torna (${dett}, differenza ${delta.toFixed(2)}€): mancano o sono errate delle voci.`;
+      // Scarto ampio (≈ una voce intera mancante) → errore bloccante;
+      // scarto contenuto → avviso.
+      if (delta > Math.max(1, result.totaleRiportato * 0.02)) result.errori.push(msg);
+      else result.avvisi.push(msg);
+    }
+  }
+
+  // C4 — voci a bassa confidenza da rivedere.
+  if (result.righeDaVerificare > 0) {
+    result.avvisi.push(`${result.righeDaVerificare} voci hanno una lettura incerta (evidenziate in arancione): controlla nome e prezzo prima di registrare.`);
+  }
+
+  // C5 — importi fuori scala per una singola voce di spesa.
+  const anomali = result.righe.filter(r => r.prezzo > 200);
+  if (anomali.length) {
+    result.avvisi.push(`${anomali.length} voci hanno un importo insolitamente alto (es. "${anomali[0].prodotto}" ${anomali[0].prezzo.toFixed(2)}€): verifica che non sia un errore di lettura.`);
+  }
+}
+
+/**
+ * Forza il recupero dell'ultima versione pubblicata: svuota le cache del
+ * service worker, ne richiede l'aggiornamento e ricarica saltando la cache
+ * HTTP. I dati utente vivono in localStorage e non vengono toccati.
+ */
+async function forzaAggiornamentoApp() {
+  toast('Ricerca aggiornamenti…', 'info');
+  try {
+    if ('caches' in window) {
+      const chiavi = await caches.keys();
+      await Promise.all(chiavi.map(k => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.update().catch(() => r.unregister())));
+    }
+  } catch (e) {
+    console.warn('Pulizia cache fallita:', e);
+  }
+  // Cache-buster in query string: su iOS il solo reload() può ripescare la
+  // pagina dalla cache HTTP anche dopo aver svuotato quelle del service worker.
+  const url = new URL(window.location.href);
+  url.searchParams.set('v', Date.now().toString(36));
+  window.location.replace(url.toString());
 }
 
 function applicaSconto(riga, importo) {
   riga.sconto = round2((riga.sconto || 0) + importo);
   riga.prezzo = round2(Math.max(0, (riga.prezzoLordo || riga.prezzo) - riga.sconto));
+  riga.prezzoFinale = riga.prezzo;
 }
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -3545,10 +4526,62 @@ function popolaPreviewDaParser(p) {
       const label = (r.sconto && r.sconto > 0)
         ? `${r.prodotto} (lordo ${fmt(r.prezzoLordo)} − sconto ${fmt(r.sconto)})`
         : r.prodotto;
-      aggiungiRigaScontrino(label, r.categoria, r.prezzo);
+      aggiungiRigaScontrino(label, r.categoria, r.prezzo, r.needsReview);
     });
   }
   aggiornaTotaleScontrino();
+  mostraEsitoOCR(p);
+}
+
+/**
+ * Rende visibile l'esito dei checkpoint: errori bloccanti in rosso, avvisi
+ * in arancione, più il testo grezzo come fallback per l'inserimento manuale.
+ * Nessun percorso resta silenzioso: se non c'è nulla da estrarre, l'utente
+ * lo legge esplicitamente insieme al motivo.
+ */
+function mostraEsitoOCR(p) {
+  const box = document.getElementById('ocr-alerts');
+  const errori = p.errori || [];
+  const avvisi = p.avvisi || [];
+  box.innerHTML = '';
+
+  errori.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'alert danger';
+    div.style.marginBottom = '10px';
+    div.innerHTML = '<strong>Estrazione non riuscita.</strong> ' + escapeHtml(e);
+    box.appendChild(div);
+  });
+
+  avvisi.forEach(a => {
+    const div = document.createElement('div');
+    div.className = 'alert warning';
+    div.style.marginBottom = '10px';
+    div.innerHTML = '<strong>Da verificare.</strong> ' + escapeHtml(a);
+    box.appendChild(div);
+  });
+
+  if (!errori.length && !avvisi.length && p.righe && p.righe.length) {
+    const div = document.createElement('div');
+    div.className = 'alert success';
+    div.style.marginBottom = '10px';
+    div.textContent = `${p.righe.length} voci estratte, totale ${fmt(p.totale)}. Controlla e registra.`;
+    box.appendChild(div);
+  }
+
+  // Testo grezzo: sempre disponibile, aperto d'ufficio quando l'estrazione
+  // è fallita (serve all'utente per ricopiare le voci a mano).
+  const wrap = document.getElementById('ocr-raw-wrap');
+  const pre = document.getElementById('ocr-raw');
+  if (ocrText && ocrText.trim()) {
+    pre.textContent = ocrText;
+    wrap.style.display = '';
+    wrap.open = errori.length > 0;
+  } else {
+    wrap.style.display = 'none';
+    wrap.open = false;
+    pre.textContent = '';
+  }
 }
 
 document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
@@ -3572,7 +4605,28 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
     toast('Aggiungi almeno un prodotto valido.', 'warning');
     return;
   }
-  const totale = righe.reduce((a,r) => a + r.prezzo, 0);
+  const totale = round2(righe.reduce((a,r) => a + r.prezzo, 0));
+
+  // La somma delle voci deve coincidere col totale stampato sullo scontrino:
+  // se non torna si mostra il delta e si chiede conferma esplicita, mai un
+  // salvataggio silenzioso di dati incoerenti.
+  if (ocrTotaleRiportato !== null) {
+    const delta = round2(totale - ocrTotaleRiportato);
+    if (Math.abs(delta) > 0.01) {
+      const ok = confirm(
+        'Il totale non torna.\n\n' +
+        'Somma prodotti: ' + totale.toFixed(2) + ' \u20ac\n' +
+        'Totale sullo scontrino: ' + ocrTotaleRiportato.toFixed(2) + ' \u20ac\n' +
+        'Differenza: ' + (delta > 0 ? '+' : '') + delta.toFixed(2) + ' \u20ac\n\n' +
+        'Correggi le voci a mano, oppure premi OK per registrare comunque.'
+      );
+      if (!ok) {
+        toast('Salvataggio annullato: correggi le voci e riprova.', 'warning', 6000);
+        return;
+      }
+    }
+  }
+
   const scontrinoId = uid();
   const origine = ocrText ? 'ocr' : 'manuale';
 
@@ -3828,7 +4882,7 @@ function disegnaPareto() {
           type: 'bar',
           label: 'Spesa €',
           data: lista.map(p => p.spesaTotale),
-          backgroundColor: '#d4a24a',
+          backgroundColor: '#22d3ee',
           borderRadius: 4,
           yAxisID: 'y'
         },
@@ -3836,8 +4890,8 @@ function disegnaPareto() {
           type: 'line',
           label: 'Cumulativa %',
           data: cumPct,
-          borderColor: '#6c8eb0',
-          backgroundColor: '#6c8eb022',
+          borderColor: '#38bdf8',
+          backgroundColor: '#38bdf822',
           tension: 0.2,
           borderWidth: 2,
           yAxisID: 'y1',
@@ -3849,7 +4903,7 @@ function disegnaPareto() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#9a978f', font: { size: 11 } } },
+        legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
         tooltip: {
           callbacks: {
             label: ctx => ctx.dataset.type === 'bar'
@@ -3859,9 +4913,9 @@ function disegnaPareto() {
         }
       },
       scales: {
-        x: { ticks: { color: '#9a978f', maxRotation: 60, minRotation: 45, font: { size: 10 } }, grid: { display:false } },
-        y: { position: 'left', ticks: { color: '#9a978f', callback: v => '€' + v }, grid: { color: '#1f1f26' } },
-        y1: { position: 'right', min: 0, max: 100, ticks: { color: '#6c8eb0', callback: v => v + '%' }, grid: { drawOnChartArea: false } }
+        x: { ticks: { color: '#94a3b8', maxRotation: 60, minRotation: 45, font: { size: 10 } }, grid: { display:false } },
+        y: { position: 'left', ticks: { color: '#94a3b8', callback: v => '€' + v }, grid: { color: 'rgba(148,163,184,0.15)' } },
+        y1: { position: 'right', min: 0, max: 100, ticks: { color: '#38bdf8', callback: v => v + '%' }, grid: { drawOnChartArea: false } }
       }
     }
   });
@@ -4118,6 +5172,14 @@ document.getElementById('recon-applica').addEventListener('click', () => {
 function renderImpostazioni() {
   document.getElementById('reddito-input').value = stato.reddito;
   document.getElementById('mese-input').value = stato.meseCorrente;
+  document.getElementById('app-version-label').textContent = APP_VERSION;
+  document.getElementById('app-version-note').textContent = APP_BUILD_NOTE;
+
+  const btnAgg = document.getElementById('btn-aggiorna-app');
+  if (btnAgg && !btnAgg.dataset.bound) {
+    btnAgg.dataset.bound = '1';
+    btnAgg.addEventListener('click', forzaAggiornamentoApp);
+  }
 
   const be = document.getElementById('macro-budget-editor');
   be.innerHTML = `
@@ -4351,6 +5413,45 @@ function scaricaFile(nome, contenuto, mime) {
 renderScontrino();
 renderDashboard();
 renderFileRiferimento();
+</script>
+
+<script>
+/* Registrazione service worker: abilita avvio offline (app shell + CDN in cache).
+ *
+ * Aggiornamenti: il solo register() non basta. Su iOS, con la PWA avviata
+ * dalla Home, il controllo di aggiornamento è inaffidabile e — anche quando
+ * il nuovo service worker si attiva — la pagina già aperta continua a
+ * eseguire l'HTML vecchio. Servono quindi tre cose:
+ *   1) update() esplicito all'avvio e a ogni ritorno in primo piano;
+ *   2) updateViaCache 'none', perché il browser non serva sw.js dalla cache;
+ *   3) reload one-shot quando il nuovo worker prende il controllo.
+ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(function (reg) {
+        reg.update().catch(function () {});
+        // Ricontrolla quando l'utente riapre l'app (tipico su telefono:
+        // l'app resta in background per giorni senza mai ricaricare).
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) reg.update().catch(function () {});
+        });
+      })
+      .catch(function (err) {
+        console.warn('Service worker non registrato:', err);
+      });
+
+    // Il nuovo worker chiama skipWaiting()+clients.claim(): quando prende il
+    // controllo ricarichiamo una sola volta per far entrare in scena l'HTML
+    // aggiornato. Il flag evita cicli di reload.
+    var ricaricato = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (ricaricato) return;
+      ricaricato = true;
+      window.location.reload();
+    });
+  });
+}
 </script>
 
 </body>

@@ -1,0 +1,31 @@
+# Ambiente/segreti
+.env
+.env.*
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# Export/backup dati personali (vedi SETUP.md: dati_DD-MM-YYYY_HH-MM.json)
+dati_*.json
+backup_*.json
+
+# Editor/IDE
+.vscode/
+.idea/
+.vs/
+*.swp
+*.swo
+.DS_Store
+
+# Log/temp/cache
+*.log
+*.tmp
+*.temp
+cache/
+*.cache
+
+# Python (gen_icons.py)
+__pycache__/
+*.pyc
