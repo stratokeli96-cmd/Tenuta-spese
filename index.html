@@ -1581,16 +1581,16 @@ html, body { overflow-x: hidden; }
       <div class="page-header">
         <div>
           <h1 class="page-title">Scontrino OCR</h1>
-          <p class="page-subtitle">Trascina una foto o un PDF dello scontrino. Il sistema estrae automaticamente data, negozio, articoli e totale.</p>
+          <p class="page-subtitle">Carica il file dalla scansione documenti iPhone. Il sistema estrae automaticamente data, negozio, articoli e totale.</p>
         </div>
       </div>
 
       <div class="widget" style="margin-bottom: var(--sp-lg);">
         <div class="ocr-zone" id="ocr-zone">
           <div class="icon">⤓</div>
-          <div class="title">Scansiona o carica lo scontrino</div>
+          <div class="title">Carica il file dalla scansione documenti iPhone.</div>
           <div class="sub">
-            Trascina qui, oppure <strong style="color:var(--accent); text-decoration: underline;">tocca per scegliere</strong> · JPG/PNG/PDF · solo browser, mai inviato online
+            Trascina qui, oppure <strong style="color:var(--accent); text-decoration: underline;">tocca per scegliere</strong> · PDF/JPG/PNG · solo browser, mai inviato online
           </div>
           <input type="file" id="ocr-input" accept="image/*,application/pdf" style="display:none;" />
           <div class="ocr-progress" id="ocr-progress">
@@ -1599,21 +1599,9 @@ html, body { overflow-x: hidden; }
           <div class="ocr-status" id="ocr-status"></div>
         </div>
 
-        <!-- Scorciatoia: `capture` apre la fotocamera in un solo tocco, senza
-             passare dal menu di scelta file. Input separato dal principale,
-             che deve restare senza `capture` per poter raggiungere i file
-             gia' salvati sul dispositivo. -->
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top: var(--sp-md);">
-          <button class="btn btn-primary" id="btn-scatta-foto">📷 Scatta foto</button>
-          <button class="btn btn-secondary" id="btn-scegli-file">Scegli file</button>
-        </div>
-        <input type="file" id="ocr-input-camera" accept="image/*" capture="environment" style="display:none;" />
-        <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
-          Di norma usa <strong>Scatta foto</strong>. Per scontrini molto lunghi o quando la foto
-          non viene letta bene: scansionalo prima con l'app <strong>File</strong>
-          (⋯ in alto a destra → Scansiona documenti) o con <strong>Note</strong>, salvalo,
-          poi caricalo qui con <strong>Scegli file</strong>. Il selettore file di Safari non
-          contiene il comando di scansione: va fatta prima.
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: var(--sp-md);">
+          Scansiona lo scontrino con l'app <strong>File</strong> (⋯ in alto a destra →
+          Scansiona documenti) o con <strong>Note</strong>, salvalo, poi carica qui il file.
         </p>
 
         <div class="ocr-preview" id="ocr-preview">
@@ -1988,7 +1976,7 @@ html, body { overflow-x: hidden; }
    scaricato l'ultima versione pubblicata.
    ============================================================ */
 const APP_VERSION = '2026.08.29h';
-const APP_BUILD_NOTE = 'Rimosso lo scanner live: "Scatta foto" torna alla fotocamera di sistema';
+const APP_BUILD_NOTE = 'Scontrino: solo caricamento file da scansione iPhone + verifica totale prima del salvataggio';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3210,6 +3198,7 @@ const CATEGORIE_ALIMENTARI = [
 ];
 
 let ocrText = '';
+let ocrTotaleRiportato = null;   // totale letto sullo scontrino, per il controllo pre-salvataggio
 
 function renderScontrino() {
   if (!document.getElementById('sc-data').value) {
@@ -3259,6 +3248,7 @@ document.getElementById('btn-reset-scontrino').addEventListener('click', () => {
   aggiungiRigaScontrino();
   aggiornaTotaleScontrino();
   ocrText = '';
+  ocrTotaleRiportato = null;
   document.getElementById('ocr-alerts').innerHTML = '';
   document.getElementById('ocr-raw').textContent = '';
   document.getElementById('ocr-raw-wrap').style.display = 'none';
@@ -3291,11 +3281,6 @@ function gestisciSelezioneFile(e) {
 
 ocrInput.addEventListener('change', gestisciSelezioneFile);
 
-// Scorciatoia fotocamera (un tocco) e accesso esplicito a file/scanner.
-const ocrInputCamera = document.getElementById('ocr-input-camera');
-document.getElementById('btn-scatta-foto').addEventListener('click', () => ocrInputCamera.click());
-document.getElementById('btn-scegli-file').addEventListener('click', () => ocrInput.click());
-ocrInputCamera.addEventListener('change', gestisciSelezioneFile);
 
 async function gestisciFileOCR(file) {
   ocrPreview.classList.remove('active');
@@ -3341,6 +3326,7 @@ async function gestisciFileOCR(file) {
     const parsed = parseScontrino(testoCompleto);
 
     ocrText = testoCompleto;
+    ocrTotaleRiportato = parsed.totaleRiportato;
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
@@ -3806,7 +3792,7 @@ function trovaImporti(riga) {
 const IVA_TAG_RE = /\*\s*[a-dA-D](?=\s|$)/g;
 
 // Rumore strutturale dello scontrino: mai un prodotto.
-const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|DI\s+CUI\s+IVA|RESTO|CONTANT|CARTA\b|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DOCUMENTO\s+COMMERC|DOCUMENTO|DI\s+VENDITA|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*I(VA)?[.:]|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI\b|SALDO\s+PUNTI|BARCODE|GRAZIE\b|ARRIVEDERCI|CODICE|TICKET\b|EAN\b|VIA\s|V\.LE|CORSO\s|PIAZZA\s|VIALE\s|LOC\.|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|MAESTRO\b|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT|TEL\.|WWW\.|HTTP)/i;
+const SKIP_RE = /^(IVA\s+EURO|IVA\s*$|DI\s+CUI\s+IVA|RESTO|CONTANT|CARTA\s+(DI\s+)?(CREDITO|DEBITO|BANCOMAT|FEDELT)|CARTA\s*$|BANCOMAT|POS\b|SUBTOT|SUB[- ]?TOTALE|N\.?\s*ARTIC|N\.?\s*PEZZI|SCONTRINO|DATA\s*[:.]|DATA\s+\d|ORA\s*[:.]|DOCUMENTO\s+COMMERC|DOCUMENTO|DI\s+VENDITA|RT\b|MATRIC|C\.?F\.?\s|P\.?\s*I(VA)?[.:]|CASSA\b|OPERAT|CASSIERE|FIDELITY|PUNTI\b|SALDO\s+PUNTI|BARCODE|GRAZIE\b|ARRIVEDERCI|CODICE|TICKET\b|EAN\b|VIA\s|V\.LE|CORSO\s|PIAZZA\s|VIALE\s|LOC\.|AUTENTIC|CAUZIONE|DEPOSITO|RESO\b|ARROTOND|IMPORTO\s+PAGAT|PAGAMENTO|VISA\b|MASTERCARD|MAESTRO\b|CIRCUITO|N\.?\s*TRANSAZ|AUTORIZZAZ|TERMINALE|MERCHANT|TEL\.|WWW\.|HTTP)/i;
 
 // Riga del totale finale. Niente "TOTAL" nudo: è prefisso di marca reale
 // (es. "TOTAL VASO 2 450G", yogurt Total).
@@ -4013,6 +3999,7 @@ function pulisciNomeProdotto(s) {
     .replace(IVA_TAG_RE, ' ')
     .replace(/\*+/g, ' ')
     .replace(/\s+/g, ' ')
+    .replace(/\s\d{1,2}\s*%\s*$/, '')   // aliquota IVA a fine riga: "TOVAGL. ... 22%"
     .replace(/^[\s,;:.\-]+/, '')
     .replace(/[\s,;:.\-]+$/, '')
     .trim();
@@ -4417,7 +4404,28 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
     toast('Aggiungi almeno un prodotto valido.', 'warning');
     return;
   }
-  const totale = righe.reduce((a,r) => a + r.prezzo, 0);
+  const totale = round2(righe.reduce((a,r) => a + r.prezzo, 0));
+
+  // La somma delle voci deve coincidere col totale stampato sullo scontrino:
+  // se non torna si mostra il delta e si chiede conferma esplicita, mai un
+  // salvataggio silenzioso di dati incoerenti.
+  if (ocrTotaleRiportato !== null) {
+    const delta = round2(totale - ocrTotaleRiportato);
+    if (Math.abs(delta) > 0.01) {
+      const ok = confirm(
+        'Il totale non torna.\n\n' +
+        'Somma prodotti: ' + totale.toFixed(2) + ' \u20ac\n' +
+        'Totale sullo scontrino: ' + ocrTotaleRiportato.toFixed(2) + ' \u20ac\n' +
+        'Differenza: ' + (delta > 0 ? '+' : '') + delta.toFixed(2) + ' \u20ac\n\n' +
+        'Correggi le voci a mano, oppure premi OK per registrare comunque.'
+      );
+      if (!ok) {
+        toast('Salvataggio annullato: correggi le voci e riprova.', 'warning', 6000);
+        return;
+      }
+    }
+  }
+
   const scontrinoId = uid();
   const origine = ocrText ? 'ocr' : 'manuale';
 
