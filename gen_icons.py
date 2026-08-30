@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Genera le icone PWA (PNG) senza dipendenze esterne.
 
-Sfondo scuro (#0a0a0c) + glifo Euro in oro (#d4a24a), come il tema dell'app.
+Sfondo blu notte (#050810) + glifo Euro ciano (#22d3ee), come il tema dell'app.
 PNG scritto a mano (solo zlib di stdlib), glifo con supersampling 4x per bordi morbidi.
 """
 import math
 import struct
 import zlib
 
-BG = (0x0a, 0x0a, 0x0c)
-GOLD = (0xd4, 0xa2, 0x4a)
+BG = (0x05, 0x08, 0x10)
+ACCENT = (0x22, 0xd3, 0xee)
 SS = 4  # fattore di supersampling
 
 
@@ -58,9 +58,9 @@ def render(size, pad):
                     py = y + (sy + 0.5) / SS
                     acc += euro_coverage(px, py, size, pad)
             cov = acc / (SS * SS)
-            r = round(BG[0] + (GOLD[0] - BG[0]) * cov)
-            g = round(BG[1] + (GOLD[1] - BG[1]) * cov)
-            b = round(BG[2] + (GOLD[2] - BG[2]) * cov)
+            r = round(BG[0] + (ACCENT[0] - BG[0]) * cov)
+            g = round(BG[1] + (ACCENT[1] - BG[1]) * cov)
+            b = round(BG[2] + (ACCENT[2] - BG[2]) * cov)
             row += bytes((r, g, b))
         rows.append(row)
     return rows
