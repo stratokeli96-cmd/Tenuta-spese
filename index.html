@@ -3807,6 +3807,25 @@ const SCONTO_GLOBALE_RE = /^(BUONO\s+SPESA|BUONO\b|COUPON\b|VOUCHER\b|GIFT\s*CAR
 // Intestazione di colonna.
 const HEADER_RE = /^(EURO\s*$|IVA\s+EURO|DESCRIZIONE|DESC\.|ARTICOLO|PRODOTTO|QTA?\s+PREZZO|PREZZO\s*$)/i;
 
+/**
+ * Individua l'indice da cui iniziano davvero i prodotti, saltando il blocco
+ * di intestazione (nome negozio, indirizzo, P.IVA, titolo documento,
+ * data/ora): quel blocco non contiene mai un prezzo di riga vero (un civico
+ * come "16" o un CAP non sono un importo con due decimali), quindi si
+ * avanza finché la riga non ha né un importo plausibile né un marker
+ * esplicito di fine intestazione (riga colonne "DESCRIZIONE"/"IVA EURO"…).
+ * Tetto a 20 righe: oltre non ha senso continuare a scartare.
+ */
+function trovaInizioElenco(lines) {
+  const MAX_HEADER = Math.min(20, lines.length);
+  for (let i = 0; i < MAX_HEADER; i++) {
+    const lUp = lines[i].toUpperCase();
+    if (HEADER_RE.test(lUp)) return i + 1;        // riga colonne: i prodotti iniziano subito dopo
+    if (trovaImporti(lines[i]).length) return i;  // prima riga con un importo: è già un prodotto
+  }
+  return MAX_HEADER;
+}
+
 // Riga quantità/peso: "2 X 1,49", "0,530 KG X 2,99".
 const QTA_RE = /^\d+([.,]\d+)?\s*(KG|G|GR|LT|L|PZ|X)\b|^\d+([.,]\d+)?\s*[xX]\s*\d/i;
 
@@ -3874,7 +3893,9 @@ function parseScontrino(txt) {
   let totaleFound = false;
   let nomeOrfano = '';   // nome andato a capo, in attesa dell'importo
 
-  for (let i = 0; i < lines.length; i++) {
+  const inizioElenco = trovaInizioElenco(lines);
+
+  for (let i = inizioElenco; i < lines.length; i++) {
     // Rimuove tag IVA e marker isolati di fine riga ("*", "•").
     const l = lines[i].replace(IVA_TAG_RE, '').replace(/[*•·]+\s*$/, '').replace(/\s+/g, ' ').trim();
     if (!l) continue;
