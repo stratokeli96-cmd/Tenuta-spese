@@ -236,7 +236,13 @@ function validaStato(input) {
     });
   }
 
-  out.archivioMesi = _arrObj(d.archivioMesi).map(a => ({
+  const idVisti = new Set();
+  out.archivioMesi = _arrObj(d.archivioMesi).map(a => {
+    let id = _str(a.id) || uid();
+    while (idVisti.has(id)) id = uid();
+    idVisti.add(id);
+    return { ...a, id };
+  }).map(a => ({
     ...a,
     mese: _str(a.mese),
     reddito: _num(a.reddito), spesoNeeds: _num(a.spesoNeeds), spesoWants: _num(a.spesoWants),
@@ -248,6 +254,49 @@ function validaStato(input) {
   out.saldoRiportato = { needs: _num(sr.needs), wants: _num(sr.wants), savings: _num(sr.savings) };
   out.schemaVersion = SCHEMA_VERSION;
   return out;
+}
+
+/* ============================================================
+   ARCHIVIO MESI: separazione stato leggero / dettaglio
+   Il dettaglio (movimenti, scontrini) dei mesi chiusi vive in IndexedDB;
+   in localStorage restano solo i totali.
+   ============================================================ */
+/** Copia leggera di un mese archiviato (senza movimenti/scontrini). */
+function meseLeggero(a) {
+  const { movimenti, scontrini, compattato, ...resto } = a;
+  return {
+    ...resto,
+    nMovimenti: (Array.isArray(movimenti) && movimenti.length) || a.nMovimenti || 0,
+    nScontrini: (Array.isArray(scontrini) && scontrini.length) || a.nScontrini || 0
+  };
+}
+/** Separa lo stato in {leggero, dettagli}: dettagli = record completi da mettere in IndexedDB. */
+function separaArchivio(st) {
+  const dettagli = [];
+  const leggero = { ...st, archivioMesi: st.archivioMesi.map(a => {
+    const haDettaglio = (a.movimenti && a.movimenti.length) || (a.scontrini && a.scontrini.length);
+    if (haDettaglio) dettagli.push({ ...a, movimenti: a.movimenti || [], scontrini: a.scontrini || [] });
+    return meseLeggero(a);
+  }) };
+  return { leggero, dettagli };
+}
+/** Ricompone lo stato completo (per l'export) unendo i dettagli letti da IndexedDB. */
+function ricomponiArchivio(stLeggero, dettagli) {
+  const perId = new Map((dettagli || []).map(r => [r.id, r]));
+  return { ...stLeggero, archivioMesi: stLeggero.archivioMesi.map(a => {
+    const r = perId.get(a.id);
+    const { nMovimenti, nScontrini, ...base } = a;
+    return { ...base, movimenti: r ? r.movimenti : (a.movimenti || []), scontrini: r ? r.scontrini : (a.scontrini || []) };
+  }) };
+}
+/** Differenze tra due mesi archiviati (b - a), per macro. */
+function confrontaMesi(a, b) {
+  const campi = [['Needs', 'spesoNeeds'], ['Wants', 'spesoWants'], ['Savings', 'versatoSavings'], ['Avanzo', 'avanzoTotale'], ['Reddito', 'reddito']];
+  return campi.map(([nome, k]) => {
+    const va = round2(_num(a[k])), vb = round2(_num(b[k]));
+    const delta = round2(vb - va);
+    return { nome, a: va, b: vb, delta, pct: va !== 0 ? Math.round(delta / va * 100) : null };
+  });
 }
 
 /** Importa un oggetto qualunque (nuovo o vecchio schema) e restituisce uno stato valido. */
@@ -289,6 +338,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     STATO_DEFAULT, SCHEMA_VERSION, VOCE_SCONTRINI, oggi, round2, uid, escapeHtml, csvCell, copiaProfonda,
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
+    meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
 }

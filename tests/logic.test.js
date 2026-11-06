@@ -118,3 +118,55 @@ test('le librerie CDN hanno SRI', () => {
   assert.equal(tag.length, 4);
   tag.forEach(t => assert.match(t, /integrity="sha384-/));
 });
+
+test('separaArchivio / ricomponiArchivio: roundtrip senza perdite', () => {
+  const st = stato({ archivioMesi: [
+    { id: 'm1', mese: 'Gen 2026', reddito: 1000, spesoNeeds: 500, spesoWants: 200, versatoSavings: 100, avanzoTotale: 50,
+      movimenti: [{ id: 'a', importo: 5 }], scontrini: [{ id: 's', totale: 7 }] },
+    { id: 'm2', mese: 'Feb 2026', movimenti: [], scontrini: [] }
+  ] });
+  const { leggero, dettagli } = L.separaArchivio(st);
+  assert.equal(dettagli.length, 1);                       // solo il mese con dettaglio
+  assert.equal(leggero.archivioMesi[0].movimenti, undefined);
+  assert.equal(leggero.archivioMesi[0].nMovimenti, 1);
+  assert.equal(leggero.archivioMesi[0].nScontrini, 1);
+  assert.equal(JSON.stringify(leggero).includes('"importo":5'), false);
+  const completo = L.ricomponiArchivio(leggero, dettagli);
+  assert.deepEqual(completo.archivioMesi[0].movimenti, [{ id: 'a', importo: 5 }]);
+  assert.deepEqual(completo.archivioMesi[0].scontrini, [{ id: 's', totale: 7 }]);
+  assert.equal(completo.archivioMesi[0].nMovimenti, undefined);
+});
+
+test('separaArchivio è idempotente e non perde i conteggi su stato già leggero', () => {
+  const st = stato({ archivioMesi: [{ id: 'm1', mese: 'Gen', movimenti: [{ id: 'a', importo: 1 }], scontrini: [] }] });
+  const una = L.separaArchivio(st).leggero;
+  const due = L.separaArchivio(L.validaStato(una)).leggero;  // validaStato rimette array vuoti
+  assert.equal(due.archivioMesi[0].nMovimenti, 1);
+  assert.equal(L.separaArchivio(L.validaStato(una)).dettagli.length, 0); // nulla da riscrivere
+});
+
+test('validaStato assegna id univoci ai mesi archiviati e li conserva', () => {
+  const g = L.copiaProfonda(L.STATO_DEFAULT);
+  g.archivioMesi = [{ mese: 'A' }, { id: 'x', mese: 'B' }, { id: 'x', mese: 'C' }];
+  const ok = L.validaStato(g);
+  const ids = ok.archivioMesi.map(a => a.id);
+  assert.equal(new Set(ids).size, 3);
+  assert.equal(ids[1], 'x');
+  assert.equal(L.validaStato(ok).archivioMesi[1].id, 'x');
+});
+
+test('confrontaMesi', () => {
+  const r = L.confrontaMesi({ spesoNeeds: 100, reddito: 1000 }, { spesoNeeds: 125.5, reddito: 1000 });
+  const needs = r.find(x => x.nome === 'Needs');
+  assert.equal(needs.delta, 25.5);
+  assert.equal(needs.pct, 26);
+  assert.equal(r.find(x => x.nome === 'Wants').pct, null); // divisione per zero evitata
+});
+
+test('archivio.js è precaricato dal service worker e copiato nel deploy', () => {
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const wf = fs.readFileSync(path.join(root, '.github/workflows/deploy-pages.yml'), 'utf8');
+  assert.match(sw, /'\.\/archivio\.js'/);
+  assert.match(sw, /'\.\/logic\.js'/);
+  assert.match(wf, /archivio\.js/);
+});
