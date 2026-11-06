@@ -1,13 +1,16 @@
 # Tenuta Spese — Setup desktop (v1)
 
-Versione **desktop-only** basata su `piano_mensile_2.html` (single-file).
-Niente PWA, niente sync GitHub, niente mobile. Apri il file in un browser desktop
+App single-file basata su `index.html`. Apri il file in un browser desktop
 e usa la funzione di export per salvare i dati come file JSON con timestamp.
+
+> 📱 **Vuoi usarla come app sull'iPhone?** Vedi [`INSTALL_IPHONE.md`](INSTALL_IPHONE.md):
+> la app è installabile come PWA (avvio a schermo intero dalla Home, offline).
 
 ## 1. Avvio
 
-Apri `piano_mensile_2.html` con il tuo browser desktop (Chrome, Edge, Firefox).
-Il layout è ottimizzato per schermi di larghezza ≥ 1280px.
+Apri `index.html` con il tuo browser desktop (Chrome, Edge, Firefox).
+Il layout è ottimizzato per schermi di larghezza ≥ 1280px; su mobile è disponibile
+un layout responsive a colonna singola.
 
 ## 2. Salvataggio dei dati su Google Drive
 
@@ -50,7 +53,11 @@ nella cartella Drive e dopo qualche secondo è disponibile sul cloud.
 
 ## Note
 
-- Il file `piano_mensile_2.html` è autosufficiente: non richiede server né
-  dipendenze. Può essere copiato/spostato liberamente.
+- L'app richiede `index.html`, `logic.js`, `sw.js`, `manifest.json` e `icons/`
+  (non solo `index.html`). Al **primo avvio serve la rete**: Chart.js, OCR (Tesseract
+  + dati italiano) e pdf.js si scaricano da CDN e poi restano in cache per l'uso offline.
+- Per avviare via PWA/service worker serve un server (`python3 -m http.server`) o
+  GitHub Pages; aprendo il file con `file://` l'app funziona ma senza service worker.
+- Dalla Dashboard compare un promemoria se l'ultimo backup JSON ha più di 14 giorni.
 - I dati di lavoro persistono nel `localStorage` del browser. L'export è il
   meccanismo di backup/sincronizzazione tra macchine.
