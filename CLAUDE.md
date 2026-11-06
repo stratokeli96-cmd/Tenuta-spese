@@ -10,7 +10,7 @@ PWA per la gestione delle spese personali. App single-file, nessun framework, ne
 - `manifest.json` — manifest PWA.
 - `gen_icons.py` — genera le icone PNG in `icons/` (solo stdlib Python).
 - `tests/logic.test.js` — test `node --test` (nessuna dipendenza): logica, versioni sincronizzate, SRI, escape HTML.
-- `.github/workflows/deploy-pages.yml` — test + deploy su GitHub Pages al push su `main`, `Tenuta-spese-telefono`, `Tenuta-spesa-finale-V1` (o `workflow_dispatch`). `test.yml` esegue i test su PR e altri branch.
+- `.github/workflows/deploy-pages.yml` — test + deploy su GitHub Pages al push su `Tenuta-spese-telefono` (branch principale/di default, usato dal telefono) e `Tenuta-spesa-finale-V1` (o `workflow_dispatch`). `test.yml` esegue i test su PR e altri branch.
 
 ## Dipendenze esterne (CDN, con SRI)
 

@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches-ignore:
-      - main
       - Tenuta-spese-telefono
       - Tenuta-spesa-finale-V1
 

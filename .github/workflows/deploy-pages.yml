@@ -6,7 +6,6 @@ name: Deploy PWA to GitHub Pages
 on:
   push:
     branches:
-      - main
       - Tenuta-spese-telefono
       - Tenuta-spesa-finale-V1
   workflow_dispatch:
