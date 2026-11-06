@@ -48,7 +48,7 @@ jobs:
       - name: Prepare site directory
         run: |
           mkdir -p _site
-          cp index.html logic.js archivio.js manifest.json sw.js _site/
+          cp index.html logic.js archivio.js xlsx.js manifest.json sw.js _site/
           cp -r icons _site/icons
 
       - name: Upload site artifact

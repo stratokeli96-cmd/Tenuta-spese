@@ -7,6 +7,7 @@ PWA per la gestione delle spese personali. App single-file, nessun framework, ne
 - `index.html` — app: markup, CSS e JS inline (~5500 righe). Nessun bundler né build step.
 - `logic.js` — logica pura (default stato, migrazione, `validaStato`/`importaStato`, calcoli, utility). Nessun DOM/localStorage: è testata da `tests/`. Caricata da `index.html` e usabile in Node (`module.exports`).
 - `archivio.js` — archivio IndexedDB dei mesi chiusi (movimenti/scontrini); in localStorage restano solo i totali. Spec: `docs/superpowers/specs/2026-11-06-storico-mesi-design.md`.
+- `xlsx.js` — lettore .xlsx minimale senza librerie (ZIP + XML, `DecompressionStream`); usato dall'import estratti conto. I `.xls` non sono supportati.
 - `sw.js` — service worker. `CACHE_VERSION` deve essere identica a `APP_VERSION` di `index.html` (lo verifica un test): vanno bumpate insieme a ogni release.
 - `manifest.json` — manifest PWA.
 - `gen_icons.py` — genera le icone PNG in `icons/` (solo stdlib Python).
@@ -33,6 +34,7 @@ Chart.js, chartjs-chart-treemap, Tesseract.js e pdf.js arrivano da jsDelivr con 
 - I dati utente stanno nel `localStorage`; export/import JSON (`dati_DD-MM-YYYY_HH-MM.json`) è il backup. Questi file contengono dati personali e non vanno mai committati (vedi `.gitignore`). L'import passa da `importaStato()` e conserva una copia in `smartFinance_v1_prima_import`; dati illegibili vengono copiati in `smartFinance_v1_corrotto_<timestamp>`.
 - Mese corrente = localStorage (sincrono). Mesi chiusi = IndexedDB (`Archivio`), mai due copie in conflitto: prima si scrive in IndexedDB, poi si alleggerisce localStorage. Il file di export ricompone tutto (stesso schema dei vecchi backup).
 - Entrate extra (`stato.entrateExtra`): vanno nel totale del mese; la quota ripartita su una macro (`alloc`) aumenta il budget di quella macro tramite `saldoRiportato`, che la chiusura mese azzera (l'extra non si trascina). La parte non ripartita finisce nell'avanzo alla chiusura.
+- Import estratto conto (Storico → "Importa estratto conto", CSV/XLSX): logica pura in `logic.js` (`parseCSV`, `rilevaColonne`, `estraiMovimentiBanca`, `trovaDoppione`, `indovinaVoce`). Uscite → movimenti `origine:'banca'` con `rif` anti-doppione; entrate → entrate extra. Le categorie scelte si ricordano in `stato.regoleBanca` (chiavi ripulite: mai `__proto__`). Fixture di prova in `tests/fixtures/` (dati finti).
 - `saldoRiportato` contiene il riporto legacy (solo dalla migrazione del vecchio schema) più le quote extra ripartite; è azzerato a ogni chiusura mese.
 
 ## Documentazione utente

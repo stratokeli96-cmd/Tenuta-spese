@@ -44,6 +44,7 @@ const STATO_DEFAULT = {
   storicoProdotti: {},
   archivioMesi: [],
   entrateExtra: [],
+  regoleBanca: {},
   saldoRiportato: { needs:0, wants:0, savings:0 }
 };
 
@@ -204,7 +205,8 @@ function validaStato(input) {
     voce: _str(m.voce),
     importo: round2(_num(m.importo)),
     descrizione: _str(m.descrizione),
-    origine: m.origine === 'ocr' ? 'ocr' : 'manuale'
+    origine: (m.origine === 'ocr' || m.origine === 'banca') ? m.origine : 'manuale',
+    ...(m.rif ? { rif: _str(m.rif).slice(0, 120) } : {})
   }));
   out.scontrini = _arrObj(d.scontrini).map(s => ({
     ...s,
@@ -243,8 +245,20 @@ function validaStato(input) {
     MACRO_IDS.forEach(id => { alloc[id] = Math.max(0, round2(_num(e.alloc && e.alloc[id]))); });
     const somma = round2(alloc.needs + alloc.wants + alloc.savings);
     if (somma > importo) MACRO_IDS.forEach(id => { alloc[id] = 0; }); // incoerente: da riassegnare
-    return { id: _str(e.id) || uid(), data: _str(e.data), descrizione: _str(e.descrizione), importo, alloc };
+    return { id: _str(e.id) || uid(), data: _str(e.data), descrizione: _str(e.descrizione), importo, alloc,
+      ...(e.rif ? { rif: _str(e.rif).slice(0, 120) } : {}) };
   }).filter(e => e.importo > 0);
+
+  out.regoleBanca = {};
+  if (d.regoleBanca && typeof d.regoleBanca === 'object' && !Array.isArray(d.regoleBanca)) {
+    Object.keys(d.regoleBanca).slice(0, 500).forEach(k => {
+      const r = d.regoleBanca[k];
+      if (!k || k.length > 40 || k === '__proto__' || k === 'constructor' || k === 'prototype') return;
+      if (r && MACRO_IDS.includes(r.macro) && typeof r.voce === 'string' && r.voce) {
+        Object.defineProperty(out.regoleBanca, k, { value: { macro: r.macro, voce: r.voce }, enumerable: true, writable: true, configurable: true });
+      }
+    });
+  }
 
   const idVisti = new Set();
   out.archivioMesi = _arrObj(d.archivioMesi).map(a => {
@@ -347,6 +361,188 @@ function calcolaAllocazione(entrata, nuova) {
   return { alloc, delta };
 }
 
+/* ============================================================
+   IMPORT ESTRATTI CONTO (CSV / XLSX)
+   ============================================================ */
+/** Parser CSV: delimitatore automatico (; , tab |), virgolette, BOM, righe vuote scartate. */
+function parseCSV(testo) {
+  let t = String(testo).replace(/^\uFEFF/, '');
+  const campione = t.split(/\r?\n/).filter(r => r.trim()).slice(0, 8).join('\n').replace(/"[^"]*"/g, '');
+  const delim = [';', '\t', '|', ','].map(d => [d, campione.split(d).length - 1]).sort((a, b) => b[1] - a[1])[0];
+  const D = delim[1] > 0 ? delim[0] : ';';
+  const righe = []; let riga = [], cella = '', inQ = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inQ) {
+      if (c === '"') { if (t[i + 1] === '"') { cella += '"'; i++; } else inQ = false; } else cella += c;
+    } else if (c === '"') inQ = true;
+    else if (c === D) { riga.push(cella); cella = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && t[i + 1] === '\n') i++;
+      riga.push(cella); cella = '';
+      if (riga.some(x => x.trim() !== '')) righe.push(riga.map(x => x.trim()));
+      riga = [];
+    } else cella += c;
+  }
+  riga.push(cella);
+  if (riga.some(x => x.trim() !== '')) righe.push(riga.map(x => x.trim()));
+  return righe;
+}
+
+/** Importo da stringa bancaria: "1.234,56", "-12,30", "(5,00)", "12,30-", "€ 7.5". NaN se non valido. */
+function parseImportoBanca(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  let t = String(v ?? '').replace(/EUR|€|\s/gi, '');
+  if (!t) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1); }
+  if (t.endsWith('-')) { neg = true; t = t.slice(0, -1); }
+  if (t.startsWith('-')) { neg = true; t = t.slice(1); } else if (t.startsWith('+')) t = t.slice(1);
+  if (!/^[\d.,]+$/.test(t)) return NaN;
+  const hp = t.includes('.'), hc = t.includes(',');
+  if (hp && hc) {
+    const dec = t.lastIndexOf(',') > t.lastIndexOf('.') ? ',' : '.';
+    t = dec === ',' ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  } else if (hc) {
+    t = t.replace(/,/g, '.');
+    if ((t.match(/\./g) || []).length > 1) t = t.replace(/\./g, '');   // "1,234,567"
+  } else if (hp && /^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const n = Number(t);
+  return Number.isFinite(n) ? (neg ? -n : n) : NaN;
+}
+
+/** Data in YYYY-MM-DD da dd/mm/yyyy, dd-mm-yy, dd.mm.yyyy, ISO, numero seriale Excel. '' se non valida. */
+function parseDataBanca(v) {
+  const p = n => String(n).padStart(2, '0');
+  const valida = (y, m, d) => {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d ? y + '-' + p(m) + '-' + p(d) : '';
+  };
+  const t = String(v ?? '').trim();
+  if (!t) return '';
+  if (/^\d{5}(\.\d+)?$/.test(t) && Number(t) > 20000 && Number(t) < 80000) {
+    const dt = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(t)) * 86400000);
+    return dt.getUTCFullYear() + '-' + p(dt.getUTCMonth() + 1) + '-' + p(dt.getUTCDate());
+  }
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return valida(+m[1], +m[2], +m[3]);
+  m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})(?!\d)/);
+  if (m) return valida(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[2], +m[1]);
+  return '';
+}
+
+function normTesto(s) {
+  return String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Trova riga di intestazione e colonne (data, descrizione, importo | uscite+entrate). */
+function rilevaColonne(righe) {
+  const RE = {
+    data: /^(data|date|data (operazione|contabile|valuta|movimento))/,
+    descrizione: /(descrizione|causale|dettagli|operazione|description|movimento|beneficiario|note)/,
+    importo: /^(importo|amount|valore|saldo movimento|importo in euro)/,
+    uscite: /(uscite|dare|addebit|debit)/,
+    entrate: /(entrate|avere|accredit|credit)/
+  };
+  let miglior = { punti: 0, idx: 0 };
+  righe.slice(0, 30).forEach((r, idx) => {
+    const celle = r.map(normTesto);
+    let punti = 0;
+    Object.values(RE).forEach(re => { if (celle.some(c => c && re.test(c))) punti++; });
+    if (punti > miglior.punti) miglior = { punti, idx };
+  });
+  const intest = (righe[miglior.idx] || []).map(normTesto);
+  const trova = re => intest.findIndex(c => c && re.test(c));
+  const col = { data: trova(RE.data), descrizione: -1, importo: trova(RE.importo), uscite: trova(RE.uscite), entrate: trova(RE.entrate) };
+  col.descrizione = intest.findIndex((c, i) => c && RE.descrizione.test(c) && i !== col.data);
+  let header = miglior.punti > 0 ? miglior.idx : -1;
+  if (col.importo >= 0 && (col.uscite === col.importo || col.entrate === col.importo)) col.importo = -1;
+  // Senza intestazione riconosciuta: si deduce dal contenuto
+  if (header === -1 || col.data < 0) {
+    const campione = righe.slice(0, 40);
+    const n = Math.max(0, ...campione.map(r => r.length));
+    let migData = -1, migImp = -1, migTxt = -1, sd = 0, si = 0, st = 0;
+    for (let c = 0; c < n; c++) {
+      const vals = campione.map(r => r[c]).filter(x => x !== undefined && x !== '');
+      const d = vals.filter(x => parseDataBanca(x)).length, i = vals.filter(x => !isNaN(parseImportoBanca(x)) && !parseDataBanca(x)).length;
+      const tx = vals.reduce((a, x) => a + (isNaN(parseImportoBanca(x)) && !parseDataBanca(x) ? String(x).length : 0), 0);
+      if (d > sd) { sd = d; migData = c; }
+      if (i > si) { si = i; migImp = c; }
+      if (tx > st) { st = tx; migTxt = c; }
+    }
+    if (col.data < 0) col.data = migData;
+    if (col.importo < 0 && col.uscite < 0 && col.entrate < 0) col.importo = migImp;
+    if (col.descrizione < 0) col.descrizione = migTxt;
+    if (header === -1) header = -1; // nessuna intestazione: i dati partono dalla riga 0
+  }
+  return { header, colonne: col, nomi: (righe[Math.max(0, header)] || []) };
+}
+
+/** Righe grezze -> movimenti bancari {data, descrizione, importo (uscite negative), rif}. */
+function estraiMovimentiBanca(righe, mapp, opzioni = {}) {
+  const c = mapp.colonne, inizio = (mapp.header ?? -1) + 1, out = [];
+  righe.slice(inizio).forEach(r => {
+    const data = parseDataBanca(r[c.data]);
+    if (!data) return;
+    let importo = NaN;
+    if (c.importo >= 0) importo = parseImportoBanca(r[c.importo]);
+    else {
+      const u = c.uscite >= 0 ? parseImportoBanca(r[c.uscite]) : NaN, e = c.entrate >= 0 ? parseImportoBanca(r[c.entrate]) : NaN;
+      if (e > 0) importo = e; else if (Math.abs(u) > 0) importo = -Math.abs(u);
+    }
+    if (!Number.isFinite(importo) || importo === 0) return;
+    if (opzioni.invertiSegno) importo = -importo;
+    importo = round2(importo);
+    const desc = (c.descrizione >= 0 ? String(r[c.descrizione] ?? '') : r.filter((x, i) => i !== c.data && i !== c.importo && isNaN(parseImportoBanca(x))).join(' ')).replace(/\s+/g, ' ').trim();
+    out.push({ data, descrizione: desc, importo, rif: data + '|' + importo.toFixed(2) + '|' + normTesto(desc).slice(0, 40) });
+  });
+  return out;
+}
+
+/** 'esatto' (già importata), 'possibile' (stessa data e importo di una voce esistente) o null. */
+function trovaDoppione(riga, st) {
+  const abs = round2(Math.abs(riga.importo));
+  const insieme = riga.importo < 0 ? st.movimenti : st.entrateExtra;
+  if (insieme.some(x => x.rif && x.rif === riga.rif)) return 'esatto';
+  if (insieme.some(x => x.data === riga.data && round2(Number(x.importo)) === abs)) return 'possibile';
+  return null;
+}
+
+const PAROLE_VUOTE_BANCA = new Set(['pagamento', 'pagam', 'pos', 'carta', 'acquisto', 'addebito', 'bonifico', 'pagobancomat', 'visa', 'mastercard', 'debit', 'transazione', 'operazione', 'del', 'dei', 'della', 'per', 'con', 'presso', 'spa', 'srl', 'italia', 'italy', 'web', 'www', 'com', 'eur', 'altri', 'istantaneo', 'sepa', 'a favore', 'favore', 'disposizione', 'contactless', 'apple', 'google', 'pay']);
+/** Parola-chiave con cui ricordare la categoria di un esercente (primo termine significativo). */
+function chiaveRegola(desc) {
+  const t = normTesto(desc).split(' ').filter(x => x.length >= 3 && !PAROLE_VUOTE_BANCA.has(x));
+  return t[0] || '';
+}
+const REGOLE_BANCA_BASE = {
+  alimentari: 'esselunga coop conad penny lidl carrefour eurospin pam despar aldi iper tigros simply supermercato',
+  carburante: 'eni q8 tamoil esso shell carburante',
+  telefonia: 'tim vodafone iliad fastweb wind',
+  utenze: 'enel a2a hera acea edison sorgenia iren gas',
+  abbonamenti: 'netflix spotify disney dazn youtube',
+  online: 'amazon paypal zalando ebay',
+  ristorazione: 'ristorante pizzeria trattoria osteria mcdonald burger sushi glovo deliveroo justeat',
+  bar: 'bar caffe caffetteria pasticceria',
+  farmacia: 'farmacia parafarmacia',
+  viaggi: 'ryanair booking airbnb trenitalia italo easyjet',
+  'tr-fisso': 'trade republic'
+};
+/** Suggerisce {macro, voce}: prima le regole imparate dall'utente, poi quelle di base (se la voce esiste). */
+function indovinaVoce(desc, st) {
+  const chiave = chiaveRegola(desc);
+  if (!chiave) return null;
+  const imp = st.regoleBanca && Object.prototype.hasOwnProperty.call(st.regoleBanca, chiave) ? st.regoleBanca[chiave] : null;
+  if (imp && stIsVoceValida(st, imp.macro, imp.voce)) return { macro: imp.macro, voce: imp.voce };
+  const tutto = normTesto(desc).split(' ');
+  for (const [voce, parole] of Object.entries(REGOLE_BANCA_BASE)) {
+    if (parole.split(' ').some(p => tutto.includes(p))) {
+      const macro = MACRO_IDS.find(m => stIsVoceValida(st, m, voce));
+      if (macro) return { macro, voce };
+    }
+  }
+  return null;
+}
+
 /** Importa un oggetto qualunque (nuovo o vecchio schema) e restituisce uno stato valido. */
 function importaStato(dati) {
   return validaStato(rilevaVecchioSchema(dati) ? migraDaVecchioSchema(dati) : dati);
@@ -387,6 +583,7 @@ if (typeof module !== 'undefined' && module.exports) {
     STATO_DEFAULT, SCHEMA_VERSION, VOCE_SCONTRINI, oggi, round2, uid, escapeHtml, csvCell, copiaProfonda,
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
+    parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };

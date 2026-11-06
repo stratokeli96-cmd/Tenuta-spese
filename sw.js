@@ -10,7 +10,7 @@
 
 // Deve essere IDENTICA a APP_VERSION in index.html (lo verifica `node --test`).
 // Cambia ad ogni release e forza l'eliminazione della shell cache precedente.
-const CACHE_VERSION = '2026.11.06c';
+const CACHE_VERSION = '2026.11.06d';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
 // La cache degli asset CDN (Chart.js, Tesseract, tessdata...) NON è versionata:
 // sono file immutabili (versione nell'URL) e riscaricarli ad ogni release
@@ -24,6 +24,7 @@ const SHELL_ASSETS = [
   './index.html',
   './logic.js',
   './archivio.js',
+  './xlsx.js',
   './manifest.json',
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',

@@ -26,6 +26,7 @@
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script src="logic.js"></script>
 <script src="archivio.js"></script>
+<script src="xlsx.js"></script>
 
 <style>
 /* ============================================================
@@ -819,6 +820,8 @@ body.drawer-open { overflow: hidden; overscroll-behavior: none; }
   text-transform: uppercase;
 }
 .badge.ocr    { background: #38bdf822; color: #b5c7d8; border: 1px solid #38bdf855; }
+.banca-dop td { opacity: .6; }
+.banca-dop td:first-child { opacity: 1; }
 .badge.manual { background: var(--bg-elev-2); color: var(--text-muted); border: 1px solid var(--border-soft); }
 .badge.needs   { background: #67e8f922; color: var(--needs); border: 1px solid #67e8f955; }
 .badge.wants   { background: #3b82f622; color: var(--wants); border: 1px solid #3b82f655; }
@@ -1833,6 +1836,7 @@ html, body { overflow-x: hidden; }
             <input type="text" id="filtro-testo" placeholder="..." />
           </div>
           <div style="display: flex; gap: 8px; align-self: flex-end;">
+            <button class="btn btn-secondary" id="btn-import-banca">Importa estratto conto</button>
             <button class="btn btn-ghost" id="btn-export-csv">CSV</button>
             <button class="btn btn-ghost" id="btn-export-json">JSON</button>
           </div>
@@ -2146,6 +2150,23 @@ html, body { overflow-x: hidden; }
   </div>
 </div>
 
+<!-- ===== MODAL: Importa estratto conto ===== -->
+<div class="modal-backdrop" id="modal-banca" role="dialog" aria-modal="true">
+  <div class="modal wide" style="max-width: 980px;">
+    <h3>Importa estratto conto</h3>
+    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: var(--sp-md);">
+      Carica un file <strong>.csv</strong> o <strong>.xlsx</strong> scaricato dalla tua banca (settimanale o mensile). Controlla l'anteprima: i doppioni sono già deselezionati.
+      I file .xls (vecchio formato) vanno salvati come .xlsx o .csv.
+    </p>
+    <input type="file" id="banca-file" accept=".csv,.txt,.xlsx" />
+    <div id="banca-corpo" style="margin-top: var(--sp-md);"></div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-md);">
+      <button class="btn btn-secondary" id="banca-annulla">Chiudi</button>
+      <button class="btn btn-primary" id="banca-importa" disabled>Importa</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: Nuova entrata extra ===== -->
 <div class="modal-backdrop" id="modal-extra" role="dialog" aria-modal="true">
   <div class="modal">
@@ -2220,8 +2241,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06c';
-const APP_BUILD_NOTE = 'Entrate extra mensili con ripartizione; storico mesi su IndexedDB, dettaglio e confronto, condivisione backup';
+const APP_VERSION = '2026.11.06d';
+const APP_BUILD_NOTE = 'Import estratti conto CSV/XLSX; entrate extra mensili; storico mesi su IndexedDB, confronto, condivisione backup';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -2661,6 +2682,127 @@ document.addEventListener('keydown', e => {
 /* ============================================================
    DASHBOARD
    ============================================================ */
+/* ============================================================
+   IMPORT ESTRATTO CONTO (CSV / XLSX)
+   Flusso: file -> righe grezze -> colonne (rilevate, correggibili) -> anteprima
+   con categoria suggerita e doppioni deselezionati -> import.
+   Uscite -> movimenti (origine 'banca'); entrate -> entrate extra (da ripartire).
+   ============================================================ */
+let banca = null; // { righe, mapp, opzioni, voci: [...] }
+
+async function leggiFileBanca(file) {
+  if (/\.xls$/i.test(file.name)) throw new Error('i file .xls non sono supportati: salvalo come .xlsx o .csv');
+  if (/\.xlsx$/i.test(file.name)) return LettoreXlsx.leggi(await file.arrayBuffer());
+  const buf = await file.arrayBuffer();
+  let testo = new TextDecoder('utf-8').decode(buf);
+  if (testo.includes('\uFFFD')) testo = new TextDecoder('windows-1252').decode(buf); // export bancari spesso in Windows-1252
+  return parseCSV(testo);
+}
+
+function preparaRigheBanca() {
+  const mov = estraiMovimentiBanca(banca.righe, banca.mapp, banca.opzioni);
+  banca.voci = mov.map(r => {
+    const dop = trovaDoppione(r, stato);
+    const sugg = r.importo < 0 ? indovinaVoce(r.descrizione, stato) : null;
+    return { ...r, doppione: dop, sel: !dop, macro: sugg ? sugg.macro : '', voce: sugg ? sugg.voce : '' };
+  });
+}
+
+function renderBanca() {
+  const box = document.getElementById('banca-corpo');
+  const btn = document.getElementById('banca-importa');
+  if (!banca) { box.innerHTML = ''; btn.disabled = true; return; }
+  const nomi = banca.mapp.nomi;
+  const optCol = (sel, vuoto) => `<option value="-1">${vuoto}</option>` + nomi.map((n, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${escapeHtml(n || 'Colonna ' + (i + 1))}</option>`).join('');
+  const c = banca.mapp.colonne;
+  const selCol = (k, etichetta, vuoto) => `<label class="form-label" style="display:block;">${etichetta}<select data-col="${k}" class="banca-col">${optCol(c[k], vuoto)}</select></label>`;
+  const n = banca.voci.length, sel = banca.voci.filter(v => v.sel).length;
+  const righeHtml = banca.voci.map((v, i) => {
+    const uscita = v.importo < 0;
+    const macroOpt = '<option value="">— macro —</option>' + MACRO_IDS_UI.map(m => `<option value="${m}" ${v.macro === m ? 'selected' : ''}>${MACRO_LABEL[m]}</option>`).join('');
+    const vociOpt = '<option value="">— voce —</option>' + (v.macro ? stato.macros[v.macro].voci.map(x => `<option value="${escapeHtml(x.id)}" ${v.voce === x.id ? 'selected' : ''}>${escapeHtml(x.nome)}</option>`).join('') : '');
+    return `<tr class="${v.doppione ? 'banca-dop' : ''}">
+      <td><input type="checkbox" class="b-sel" data-i="${i}" ${v.sel ? 'checked' : ''} /></td>
+      <td class="num">${fmtData(v.data)}</td>
+      <td>${escapeHtml(v.descrizione) || '—'}${v.doppione ? `<div style="color:var(--warning); font-size:11px;">${v.doppione === 'esatto' ? 'già importata' : 'possibile doppione (stessa data e importo)'}</div>` : ''}</td>
+      <td class="amount-cell" style="color:${uscita ? 'var(--text)' : 'var(--success)'}">${uscita ? '' : '+'}${fmt(v.importo)}</td>
+      <td>${uscita ? `<select class="b-macro" data-i="${i}">${macroOpt}</select> <select class="b-voce" data-i="${i}" ${v.macro ? '' : 'disabled'}>${vociOpt}</select>` : '<span style="color:var(--text-dim); font-size:12px;">Entrata extra</span>'}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <details ${n ? '' : 'open'} style="margin-bottom:10px;"><summary style="cursor:pointer; color:var(--text-muted);">Colonne rilevate (tocca per correggere)</summary>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:8px;">
+        ${selCol('data', 'Data', '—')}${selCol('descrizione', 'Descrizione', '—')}${selCol('importo', 'Importo (unico)', '— (Dare/Avere) —')}
+        ${selCol('uscite', 'Uscite/Dare', '—')}${selCol('entrate', 'Entrate/Avere', '—')}
+      </div>
+      <label style="display:block; margin-top:8px; font-size:13px;"><input type="checkbox" id="banca-inverti" ${banca.opzioni.invertiSegno ? 'checked' : ''} /> Inverti il segno (le uscite risultano positive)</label>
+    </details>
+    ${n ? `<p style="font-size:13px; color:var(--text-muted);">${n} righe lette · ${sel} selezionate. <button class="btn btn-ghost" id="banca-tutte" style="padding:2px 8px; font-size:12px;">Seleziona tutte</button> <button class="btn btn-ghost" id="banca-nessuna" style="padding:2px 8px; font-size:12px;">Nessuna</button></p>
+    <div class="table-wrap" style="max-height:50vh; overflow:auto;"><table class="data"><thead><tr><th></th><th>Data</th><th>Descrizione</th><th style="text-align:right;">Importo</th><th>Categoria</th></tr></thead><tbody>${righeHtml}</tbody></table></div>
+    <p style="font-size:12px; color:var(--text-dim); margin-top:6px;">Le uscite selezionate senza categoria non vengono importate. Le categorie scelte vengono ricordate per i prossimi import.</p>`
+    : '<div class="alert warning">Nessun movimento riconosciuto: controlla le colonne qui sopra.</div>'}`;
+  btn.disabled = sel === 0;
+  btn.textContent = sel ? `Importa ${sel} righe` : 'Importa';
+
+  box.querySelectorAll('.banca-col').forEach(el => el.addEventListener('change', () => {
+    banca.mapp.colonne[el.dataset.col] = Number(el.value);
+    preparaRigheBanca(); renderBanca();
+  }));
+  const inv = box.querySelector('#banca-inverti');
+  if (inv) inv.addEventListener('change', () => { banca.opzioni.invertiSegno = inv.checked; preparaRigheBanca(); renderBanca(); });
+  box.querySelectorAll('.b-sel').forEach(el => el.addEventListener('change', () => { banca.voci[el.dataset.i].sel = el.checked; renderBanca(); }));
+  box.querySelectorAll('.b-macro').forEach(el => el.addEventListener('change', () => { const v = banca.voci[el.dataset.i]; v.macro = el.value; v.voce = ''; renderBanca(); }));
+  box.querySelectorAll('.b-voce').forEach(el => el.addEventListener('change', () => { banca.voci[el.dataset.i].voce = el.value; }));
+  const t = box.querySelector('#banca-tutte'), nn = box.querySelector('#banca-nessuna');
+  if (t) t.addEventListener('click', () => { banca.voci.forEach(v => { v.sel = true; }); renderBanca(); });
+  if (nn) nn.addEventListener('click', () => { banca.voci.forEach(v => { v.sel = false; }); renderBanca(); });
+}
+
+document.getElementById('btn-import-banca').addEventListener('click', () => {
+  banca = null; renderBanca();
+  document.getElementById('banca-file').value = '';
+  document.getElementById('modal-banca').classList.add('active');
+});
+document.getElementById('banca-annulla').addEventListener('click', () => { banca = null; document.getElementById('modal-banca').classList.remove('active'); });
+document.getElementById('banca-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const righe = await leggiFileBanca(file);
+    if (!righe.length) throw new Error('il file è vuoto');
+    banca = { righe, mapp: rilevaColonne(righe), opzioni: { invertiSegno: false }, voci: [] };
+    preparaRigheBanca(); renderBanca();
+  } catch (err) {
+    banca = null; renderBanca();
+    toast('Lettura non riuscita: ' + err.message, 'danger', 6000);
+  }
+});
+document.getElementById('banca-importa').addEventListener('click', () => {
+  if (!banca) return;
+  let uscite = 0, entrate = 0, senzaCat = 0, saltate = 0;
+  banca.voci.forEach(v => {
+    if (!v.sel) return;
+    if (v.importo < 0) {
+      if (!v.macro || !v.voce || !isVoceValida(v.macro, v.voce)) { senzaCat++; return; }
+      stato.movimenti.push({ id: uid(), data: v.data, macro: v.macro, voce: v.voce, importo: round2(-v.importo), descrizione: v.descrizione, origine: 'banca', rif: v.rif });
+      const k = chiaveRegola(v.descrizione);
+      if (k && k !== '__proto__') Object.defineProperty(stato.regoleBanca, k, { value: { macro: v.macro, voce: v.voce }, enumerable: true, writable: true, configurable: true });
+      uscite++;
+    } else {
+      stato.entrateExtra.push({ id: uid(), data: v.data, descrizione: v.descrizione || 'Accredito', importo: round2(v.importo), alloc: { needs: 0, wants: 0, savings: 0 }, rif: v.rif });
+      entrate++;
+    }
+  });
+  if (!uscite && !entrate) { toast('Nessuna riga importata: assegna una categoria alle uscite selezionate.', 'warning', 5000); return; }
+  salvaStato();
+  banca = null;
+  document.getElementById('modal-banca').classList.remove('active');
+  toast(`Importate ${uscite} uscite e ${entrate} entrate extra` + (senzaCat ? ` · ${senzaCat} uscite senza categoria saltate` : '') + '.', 'success', 6000);
+  renderDashboard();
+  const attiva = document.querySelector('.nav-item.active')?.dataset.view;
+  (VIEW_RENDERERS[attiva] || renderDashboard)();
+});
+
 /* ---------- Entrate extra ---------- */
 function renderEntrateExtra() {
   const lista = document.getElementById('extra-lista');
@@ -4809,7 +4951,7 @@ function applicaFiltri() {
       <td><span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macro)}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
       <td>${escapeHtml(t.voceNome)}</td>
       <td>${escapeHtml(t.descrizione)}</td>
-      <td><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : 'manuale'}</span></td>
+      <td><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : (t.origine === 'banca' ? 'banca' : 'manuale')}</span></td>
       <td class="amount-cell">${fmt(t.importo)}</td>
       <td><button class="btn-icon-danger" data-id="${escapeHtml(t.id)}" data-tipo="${escapeHtml(t.tipo)}">elimina</button></td>
     </tr>

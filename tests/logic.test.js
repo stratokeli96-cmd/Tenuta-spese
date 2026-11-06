@@ -215,3 +215,96 @@ test('redditoMese e confrontaMesi includono le entrate extra', () => {
   const r = L.confrontaMesi({ reddito: 1000 }, { reddito: 1000, extraTot: 100 }).find(x => x.nome === 'Reddito');
   assert.equal(r.delta, 100);
 });
+
+/* ---------------- Import estratti conto ---------------- */
+const X = require('../xlsx.js');
+
+test('parseImportoBanca: formati italiani e segni', () => {
+  const p = L.parseImportoBanca;
+  assert.equal(p('1.234,56'), 1234.56);
+  assert.equal(p('-12,30'), -12.3);
+  assert.equal(p('(5,00)'), -5);
+  assert.equal(p('12,30-'), -12.3);
+  assert.equal(p('€ 7.5'), 7.5);
+  assert.equal(p('1.234'), 1234);        // punto come separatore migliaia
+  assert.equal(p('1,234.56'), 1234.56);  // formato inglese
+  assert.ok(Number.isNaN(p('abc')));
+  assert.ok(Number.isNaN(p('')));
+});
+
+test('parseDataBanca: formati e date impossibili', () => {
+  const d = L.parseDataBanca;
+  assert.equal(d('03/11/2026'), '2026-11-03');
+  assert.equal(d('3-11-26'), '2026-11-03');
+  assert.equal(d('03.11.2026'), '2026-11-03');
+  assert.equal(d('2026-11-03T10:00:00'), '2026-11-03');
+  assert.equal(d('46000'), '2025-12-09');   // seriale Excel
+  assert.equal(d('31/02/2026'), '');
+  assert.equal(d('abc'), '');
+});
+
+test('parseCSV: delimitatore automatico, virgolette, BOM', () => {
+  const r = L.parseCSV('﻿a;b;c\n"x;y";"he said ""hi""";3\n\n');
+  assert.deepEqual(r, [['a', 'b', 'c'], ['x;y', 'he said "hi"', '3']]);
+  assert.deepEqual(L.parseCSV('a,b\n1,2'), [['a', 'b'], ['1', '2']]);
+});
+
+test('CSV bancario con preambolo: colonne e movimenti', () => {
+  const testo = new TextDecoder('windows-1252').decode(fs.readFileSync(path.join(root, 'tests/fixtures/banca.csv')));
+  const righe = L.parseCSV(testo);
+  const m = L.rilevaColonne(righe);
+  assert.equal(m.header, 1);
+  assert.deepEqual([m.colonne.data, m.colonne.descrizione, m.colonne.importo], [0, 1, 2]);
+  const mov = L.estraiMovimentiBanca(righe, m);
+  assert.equal(mov.length, 3);
+  assert.deepEqual(mov.map(x => x.importo), [-27.4, 1250, -1.3]);
+  assert.equal(mov[0].data, '2026-11-03');
+  assert.equal(mov[2].descrizione, 'Caffè Roma');
+  assert.equal(L.estraiMovimentiBanca(righe, m, { invertiSegno: true })[0].importo, 27.4);
+});
+
+test('XLSX: lettura senza librerie, colonne Dare/Avere, entità XML', async () => {
+  const buf = fs.readFileSync(path.join(root, 'tests/fixtures/banca.xlsx'));
+  const righe = await X.leggi(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  assert.equal(righe[0][0], 'Estratto conto - Conto Esempio');
+  const m = L.rilevaColonne(righe);
+  assert.equal(m.header, 1);
+  assert.ok(m.colonne.uscite >= 0 && m.colonne.entrate >= 0 && m.colonne.importo === -1);
+  const mov = L.estraiMovimentiBanca(righe, m);
+  assert.equal(mov.length, 3);
+  assert.deepEqual(mov.map(x => x.importo), [-35.2, 100, -12.99]);
+  assert.equal(mov[0].data, '2025-12-09');
+  assert.equal(mov[1].descrizione, 'Bonifico da MARIO ROSSI Rimborso <spese> & co');
+  await assert.rejects(() => X.leggi(new TextEncoder().encode('non sono uno zip, ma abbastanza lungo per il test').buffer), /ZIP|xlsx/);
+});
+
+test('trovaDoppione: esatto, possibile, nessuno', () => {
+  const st = stato({ movimenti: [{ id: 'a', data: '2026-11-03', importo: 27.4, rif: '2026-11-03|-27.40|conad' }, { id: 'b', data: '2026-11-04', importo: 10 }] });
+  assert.equal(L.trovaDoppione({ data: '2026-11-03', importo: -27.4, rif: '2026-11-03|-27.40|conad' }, st), 'esatto');
+  assert.equal(L.trovaDoppione({ data: '2026-11-04', importo: -10, rif: 'x' }, st), 'possibile');
+  assert.equal(L.trovaDoppione({ data: '2026-11-05', importo: -10, rif: 'y' }, st), null);
+  assert.equal(L.trovaDoppione({ data: '2026-11-04', importo: 10, rif: 'z' }, st), null); // entrata: non confrontata con le uscite
+});
+
+test('indovinaVoce: regole imparate prima di quelle di base, solo su voci esistenti', () => {
+  const st = stato();
+  assert.equal(L.chiaveRegola('PAGAMENTO POS ESSELUNGA VIAREGGIO 12/03'), 'esselunga');
+  assert.deepEqual(L.indovinaVoce('PAGAMENTO POS ESSELUNGA VIAREGGIO', st), { macro: 'needs', voce: 'alimentari' });
+  assert.deepEqual(L.indovinaVoce('Bonifico Trade Republic', st), { macro: 'savings', voce: 'tr-fisso' });
+  assert.equal(L.indovinaVoce('NEGOZIO SCONOSCIUTO', st), null);
+  st.regoleBanca = { esselunga: { macro: 'wants', voce: 'altro-wants' } };
+  assert.deepEqual(L.indovinaVoce('POS ESSELUNGA', st), { macro: 'wants', voce: 'altro-wants' });
+  st.regoleBanca = { esselunga: { macro: 'wants', voce: 'voce-cancellata' } };      // regola obsoleta: ripiega sulla base
+  assert.deepEqual(L.indovinaVoce('POS ESSELUNGA', st), { macro: 'needs', voce: 'alimentari' });
+});
+
+test('validaStato: regoleBanca ripulite (niente __proto__), origine banca e rif conservati', () => {
+  const g = JSON.parse('{"regoleBanca":{"__proto__":{"macro":"needs","voce":"x"},"ok":{"macro":"wants","voce":"bar"},"brutta":{"macro":"altro","voce":"y"}}}');
+  const base = L.copiaProfonda(L.STATO_DEFAULT); base.regoleBanca = g.regoleBanca;
+  base.movimenti = [{ id: 'm', macro: 'wants', voce: 'bar', importo: 3, origine: 'banca', rif: 'r1' }];
+  const ok = L.validaStato(base);
+  assert.deepEqual(Object.keys(ok.regoleBanca), ['ok']);
+  assert.equal(Object.getPrototypeOf(ok.regoleBanca), Object.prototype);
+  assert.equal(ok.movimenti[0].origine, 'banca');
+  assert.equal(ok.movimenti[0].rif, 'r1');
+});
