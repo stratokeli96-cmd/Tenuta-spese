@@ -616,6 +616,29 @@ function normalizzaRispostaGemini(raw, categorie) {
   return out;
 }
 
+/**
+ * Sceglie il modello Gemini migliore tra quelli che la chiave può usare.
+ * `elenco`: risposta di models.list ([{name:'models/...', supportedGenerationMethods:[...]}]).
+ * Preferenze: alias "flash-latest" > flash stabile più recente > altro flash > altro gemini. Mai lite/preview/image/tts/live.
+ */
+function scegliModelloGemini(elenco) {
+  const tutti = (Array.isArray(elenco) ? elenco : []).map(m => ({
+    nome: String((m && m.name) || '').replace(/^models\//, ''),
+    metodi: (m && (m.supportedGenerationMethods || m.metodi)) || []
+  })).filter(m => /^gemini-/.test(m.nome) && m.metodi.includes('generateContent') && !/(image|tts|live|embedding|audio|robotics|computer|learnlm|vision)/.test(m.nome));
+  if (!tutti.length) return null;
+  const versione = n => { const v = n.match(/gemini-(\d+(?:\.\d+)?)/); return v ? parseFloat(v[1]) : 0; };
+  const migliore = lista => lista.sort((a, b) => versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length)[0];
+  const alias = tutti.find(m => m.nome === 'gemini-flash-latest');
+  if (alias) return alias.nome;
+  const stabili = tutti.filter(m => /^gemini-\d+(\.\d+)?-flash$/.test(m.nome));
+  if (stabili.length) return migliore(stabili).nome;
+  const flash = tutti.filter(m => /flash/.test(m.nome) && !/(lite|preview|exp|thinking)/.test(m.nome));
+  if (flash.length) return migliore(flash).nome;
+  const altri = tutti.filter(m => !/(lite|preview|exp|thinking)/.test(m.nome));
+  return (altri.length ? migliore(altri) : migliore(tutti)).nome;
+}
+
 /** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). */
 function messaggioErroreGemini(status, dettaglio) {
   const d = String(dettaglio || '').slice(0, 160);
@@ -730,7 +753,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, scegliModelloGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
