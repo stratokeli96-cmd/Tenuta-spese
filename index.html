@@ -1544,6 +1544,75 @@ html, body { overflow-x: hidden; }
 /* contenitori con griglie a larghezza fissa: consenti lo scroll interno
    invece di rompere il layout della pagina */
 .tx-list, .heatmap, .scontrino-table { overflow-x: auto; }
+
+/* ============================================================
+   MOBILE & ACCESSIBILITÀ (revisione grafica)
+   ============================================================ */
+.amount-cell, .num { white-space: nowrap; }
+.btn { white-space: nowrap; }
+.page-header { flex-wrap: wrap; }
+.extra-riga { display:grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items:center; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+.extra-riga:last-child { border-bottom: 0; }
+.extra-riga .e-data { color: var(--text-dim); font-size: 12px; }
+.extra-riga .e-desc { min-width: 0; overflow-wrap: anywhere; }
+.extra-riga .e-sub { color: var(--text-dim); font-size: 11px; }
+.extra-riga .e-imp { font-family: var(--font-mono); font-weight: 600; white-space: nowrap; }
+.extra-riga .e-azioni { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+@media (max-width: 640px) {
+  /* iOS ingrandisce la pagina quando un campo con testo < 16px prende il focus (ora lo zoom è consentito) */
+  input, select, textarea { font-size: 16px; min-height: 44px; }
+  input[type="checkbox"], input[type="radio"] { min-height: 0; width: 20px; height: 20px; }
+  .btn, .btn-icon-danger, .tabbar-item { min-height: 44px; }
+  .btn-icon-danger { padding: 10px 14px; }
+
+  /* filtri: due colonne invece di una pila altissima */
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .toolbar .form-group { flex: none !important; min-width: 0; }
+  .toolbar .form-group:has(#filtro-testo), .toolbar .form-group:has(#cerca-prodotto) { grid-column: 1 / -1; }
+  .toolbar > div[style*="align-self"] { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+  .toolbar > div[style*="align-self"] .btn { flex: 1 1 auto; }
+
+  /* editor voci: il nome prende lo spazio, budget ed elimina restano accanto */
+  .voci-list .form-row { grid-template-columns: 1fr 96px 44px !important; }
+  /* preview ricalibrazione e confronto: niente sforamento orizzontale */
+  #recalibra-preview div[style*="grid"] { gap: 8px !important; }
+  #recalibra-preview div[style*="grid"] > div { min-width: 0; padding: 8px !important; }
+  #recalibra-preview .num { font-size: 14px !important; }
+  table.compatta { font-size: 12px; }
+  table.compatta thead th, table.compatta tbody td { padding: 8px 6px; }
+  table.compatta tbody td:last-child { white-space: normal; }
+
+  /* tabelle "a schede": una scheda per riga, etichetta + valore */
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack thead { display: none; }
+  table.stack tbody tr { background: var(--bg-elev-2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); margin-bottom: 10px; padding: 6px 12px; }
+  table.stack tbody td { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border: 0; text-align: right; }
+  table.stack tbody td::before { content: attr(data-label); color: var(--text-dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; text-align: left; flex: 0 0 auto; padding-top: 2px; }
+  table.stack tbody td.empty-state { display: block; text-align: center; }
+  table.stack tbody td.empty-state::before { content: none; }
+
+  /* storico transazioni: scheda compatta (voce + importo / descrizione / data, macro, origine, azione) */
+  table.tx-cards, table.tx-cards tbody, table.tx-cards tr, table.tx-cards td { display: block; width: 100%; }
+  table.tx-cards thead { display: none; }
+  table.tx-cards tbody tr { display: grid; grid-template-columns: auto auto auto 1fr auto; grid-template-areas: "voce voce voce voce imp" "desc desc desc desc desc" "data macro orig . act"; gap: 4px 10px; align-items: center; padding: 12px; margin-bottom: 8px; background: var(--bg-elev-2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+  table.tx-cards tbody td { padding: 0; border: 0; width: auto; }
+  table.tx-cards td.c-voce { grid-area: voce; font-weight: 600; }
+  table.tx-cards td.c-imp { grid-area: imp; font-size: 15px; text-align: right; }
+  table.tx-cards td.c-desc { grid-area: desc; color: var(--text-muted); overflow-wrap: anywhere; }
+  table.tx-cards td.c-desc:empty { display: none; }
+  table.tx-cards td.c-data { grid-area: data; color: var(--text-dim); font-size: 12px; }
+  table.tx-cards td.c-macro { grid-area: macro; }
+  table.tx-cards td.c-orig { grid-area: orig; }
+  table.tx-cards td.c-act { grid-area: act; text-align: right; }
+  table.tx-cards tbody tr:hover { background: var(--bg-elev-2); }
+  table.tx-cards tbody td.empty-state { grid-column: 1 / -1; width: 100%; text-align: center; }
+}
+}
 </style>
 </head>
 <body>
@@ -1844,7 +1913,7 @@ html, body { overflow-x: hidden; }
         </div>
 
         <div class="table-wrap">
-          <table class="data" id="tabella-tx">
+          <table class="data tx-cards" id="tabella-tx">
             <thead>
               <tr>
                 <th>Data</th>
@@ -1900,7 +1969,7 @@ html, body { overflow-x: hidden; }
           </div>
         </div>
         <div class="table-wrap">
-          <table class="data" id="tabella-prodotti">
+          <table class="data stack" id="tabella-prodotti">
             <thead>
               <tr>
                 <th class="sortable" data-sort="prodotto">Prodotto</th>
@@ -1953,7 +2022,7 @@ html, body { overflow-x: hidden; }
       <div class="widget">
         <div class="section-title">Archivio mesi</div>
         <div class="table-wrap">
-          <table class="data">
+          <table class="data stack">
             <thead>
               <tr>
                 <th>Mese</th>
@@ -2282,8 +2351,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06e';
-const APP_BUILD_NOTE = 'Gemini per gli scontrini con casi di prova, analisi dove spendo, import estratti conto, entrate extra, storico mesi';
+const APP_VERSION = '2026.11.06f';
+const APP_BUILD_NOTE = 'Grafica mobile: schede al posto delle tabelle, filtri compatti, tap più ampi; Gemini, analisi, import banca, entrate extra';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -2855,17 +2924,18 @@ function renderEntrateExtra() {
     lista.innerHTML = '<div class="empty-state">Nessuna entrata extra questo mese.</div>';
     return;
   }
-  lista.innerHTML = '<div class="table-wrap"><table class="data"><tbody>' + stato.entrateExtra.map(e => {
+  lista.innerHTML = stato.entrateExtra.map(e => {
     const resto = round2(e.importo - extraAssegnata(e));
     const split = MACRO_IDS_UI.filter(id => e.alloc[id] > 0).map(id => MACRO_LABEL[id] + ' ' + fmt(e.alloc[id])).join(' · ');
-    return `<tr>
-      <td class="num">${fmtData(e.data)}</td>
-      <td>${escapeHtml(e.descrizione || 'Entrata extra')}<div style="color:var(--text-dim); font-size:11px;">${split ? escapeHtml(split) : ''}${resto > 0 ? (split ? ' · ' : '') + 'da assegnare ' + fmt(resto) : ''}</div></td>
-      <td class="amount-cell">${fmt(e.importo)}</td>
-      <td style="white-space:nowrap;"><button class="btn btn-ghost extra-alloc" data-id="${escapeHtml(e.id)}" style="padding:4px 8px; font-size:11px;">Ripartisci</button>
-        <button class="btn-icon-danger extra-del" data-id="${escapeHtml(e.id)}">elimina</button></td>
-    </tr>`;
-  }).join('') + '</tbody></table></div>';
+    const sub = (split ? split : '') + (resto > 0 ? (split ? ' · ' : '') + 'da assegnare ' + fmt(resto) : '');
+    return `<div class="extra-riga">
+      <span class="e-data num">${fmtData(e.data)}</span>
+      <div class="e-desc">${escapeHtml(e.descrizione || 'Entrata extra')}${sub ? `<div class="e-sub">${escapeHtml(sub)}</div>` : ''}</div>
+      <span class="e-imp">${fmt(e.importo)}</span>
+      <div class="e-azioni"><button class="btn btn-ghost extra-alloc" data-id="${escapeHtml(e.id)}" style="padding:6px 12px; font-size:12px;">Ripartisci</button>
+        <button class="btn-icon-danger extra-del" data-id="${escapeHtml(e.id)}">elimina</button></div>
+    </div>`;
+  }).join('');
   lista.querySelectorAll('.extra-alloc').forEach(b => b.addEventListener('click', () => apriAllocazione(b.dataset.id)));
   lista.querySelectorAll('.extra-del').forEach(b => b.addEventListener('click', () => eliminaEntrataExtra(b.dataset.id)));
 }
@@ -2966,6 +3036,22 @@ let chartAndamento = null;
 let chartTopVoci = null;
 let donutState = { level: 'macro', macro: null };
 
+/** Animazione del numero principale (rispetta prefers-reduced-motion). */
+function animaNumero(el, valore, formato, ms = 550) {
+  const prima = Number(el.dataset.v);
+  el.dataset.v = String(valore);
+  const ridotto = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (ridotto || !Number.isFinite(prima) || prima === valore) { el.textContent = formato(valore); return; }
+  const t0 = performance.now();
+  const passo = t => {
+    if (el.dataset.v !== String(valore)) return;          // è arrivato un valore più recente
+    const k = Math.min(1, (t - t0) / ms);
+    el.textContent = formato(prima + (valore - prima) * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
+}
+
 function renderDashboard() {
   document.getElementById('current-month-label').textContent = stato.meseCorrente;
   document.getElementById('reddito-display').textContent = fmtRound(redditoTotale(stato));
@@ -2975,7 +3061,7 @@ function renderDashboard() {
   const tS = totSpeso();
   const tR = round2(tB - tS + Object.values(stato.saldoRiportato).reduce((a,v)=>a+(Number(v)||0),0) + extraDaAssegnare(stato));
 
-  document.getElementById('hero-residuo').textContent = fmt(tR);
+  animaNumero(document.getElementById('hero-residuo'), tR, fmt);
   document.getElementById('hero-mese').textContent = stato.meseCorrente;
   document.getElementById('hero-pct').textContent = (tB > 0 ? Math.round((tR / tB) * 100) : 0) + '% del budget';
   document.getElementById('hero-budget').textContent = fmt(tB);
@@ -5121,13 +5207,13 @@ function applicaFiltri() {
   }
   tbody.innerHTML = filtrate.map(t => `
     <tr>
-      <td class="num">${fmtData(t.data)}</td>
-      <td><span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macro)}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
-      <td>${escapeHtml(t.voceNome)}</td>
-      <td>${escapeHtml(t.descrizione)}</td>
-      <td><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : (t.origine === 'banca' ? 'banca' : 'manuale')}</span></td>
-      <td class="amount-cell">${fmt(t.importo)}</td>
-      <td><button class="btn-icon-danger" data-id="${escapeHtml(t.id)}" data-tipo="${escapeHtml(t.tipo)}">elimina</button></td>
+      <td class="num c-data">${fmtData(t.data)}</td>
+      <td class="c-macro"><span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macro)}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
+      <td class="c-voce">${escapeHtml(t.voceNome)}</td>
+      <td class="c-desc">${escapeHtml(t.descrizione)}</td>
+      <td class="c-orig"><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : (t.origine === 'banca' ? 'banca' : 'manuale')}</span></td>
+      <td class="amount-cell c-imp">${fmt(t.importo)}</td>
+      <td class="c-act"><button class="btn-icon-danger" data-id="${escapeHtml(t.id)}" data-tipo="${escapeHtml(t.tipo)}">elimina</button></td>
     </tr>
   `).join('');
 
@@ -5281,12 +5367,12 @@ function disegnaTabellaProdotti() {
   }
   tbody.innerHTML = lista.map(p => `
     <tr>
-      <td>${escapeHtml(p.prodotto)}</td>
-      <td style="color: var(--text-muted);">${escapeHtml(p.categoria)}</td>
-      <td class="amount-cell">${p.volte}</td>
-      <td class="amount-cell">${fmt(p.spesaTotale)}</td>
-      <td class="amount-cell">${fmt(p.prezzoMedio)}</td>
-      <td class="amount-cell">${fmt(p.ultimoPrezzo)}</td>
+      <td data-label="Prodotto">${escapeHtml(p.prodotto)}</td>
+      <td data-label="Categoria" style="color: var(--text-muted);">${escapeHtml(p.categoria)}</td>
+      <td class="amount-cell" data-label="Volte">${p.volte}</td>
+      <td class="amount-cell" data-label="Spesa totale">${fmt(p.spesaTotale)}</td>
+      <td class="amount-cell" data-label="Prezzo medio">${fmt(p.prezzoMedio)}</td>
+      <td class="amount-cell" data-label="Ultimo prezzo">${fmt(p.ultimoPrezzo)}</td>
     </tr>
   `).join('');
 }
@@ -5401,12 +5487,12 @@ function renderCambioMese() {
   } else {
     tbody.innerHTML = stato.archivioMesi.map(m => `
       <tr class="riga-mese" data-id="${escapeHtml(m.id)}" style="cursor:pointer;" tabindex="0">
-        <td>${escapeHtml(m.mese)} <span style="color:var(--text-dim); font-size:11px;">· ${Number(m.nMovimenti || (m.movimenti||[]).length || 0) + Number(m.nScontrini || (m.scontrini||[]).length || 0)} reg.</span></td>
-        <td class="amount-cell">${fmt(redditoMese(m))}</td>
-        <td class="amount-cell">${fmt(m.spesoNeeds||0)}</td>
-        <td class="amount-cell">${fmt(m.spesoWants||0)}</td>
-        <td class="amount-cell">${fmt(m.versatoSavings||0)}</td>
-        <td class="amount-cell" style="color:var(--text-muted);">${fmt(m.avanzoTotale||0)}</td>
+        <td data-label="Mese">${escapeHtml(m.mese)} <span style="color:var(--text-dim); font-size:11px;">· ${Number(m.nMovimenti || (m.movimenti||[]).length || 0) + Number(m.nScontrini || (m.scontrini||[]).length || 0)} reg.</span></td>
+        <td class="amount-cell" data-label="Reddito">${fmt(redditoMese(m))}</td>
+        <td class="amount-cell" data-label="Needs">${fmt(m.spesoNeeds||0)}</td>
+        <td class="amount-cell" data-label="Wants">${fmt(m.spesoWants||0)}</td>
+        <td class="amount-cell" data-label="Savings">${fmt(m.versatoSavings||0)}</td>
+        <td class="amount-cell" style="color:var(--text-muted);" data-label="Avanzo">${fmt(m.avanzoTotale||0)}</td>
       </tr>
     `).join('');
     tbody.querySelectorAll('.riga-mese').forEach(r => {
@@ -5469,10 +5555,10 @@ function renderConfrontoMesi() {
   const calcola = () => {
     const a = mesi.find(m => m.id === selA.value), b = mesi.find(m => m.id === selB.value);
     if (!a || !b) return;
-    document.getElementById('conf-risultato').innerHTML = `<div class="table-wrap"><table class="data">
+    document.getElementById('conf-risultato').innerHTML = `<div class="table-wrap"><table class="data compatta">
       <thead><tr><th></th><th style="text-align:right;">${escapeHtml(a.mese)}</th><th style="text-align:right;">${escapeHtml(b.mese)}</th><th style="text-align:right;">Differenza</th></tr></thead>
-      <tbody>${confrontaMesi(a, b).map(r => `<tr><td>${escapeHtml(r.nome)}</td><td class="amount-cell">${fmt(r.a)}</td><td class="amount-cell">${fmt(r.b)}</td>
-        <td class="amount-cell">${r.delta > 0 ? '+' : ''}${fmt(r.delta)}${r.pct === null ? '' : ' (' + (r.pct > 0 ? '+' : '') + r.pct + '%)'}</td></tr>`).join('')}</tbody></table></div>`;
+      <tbody>${confrontaMesi(a, b).map(r => `<tr><td data-label="Voce">${escapeHtml(r.nome)}</td><td class="amount-cell" data-label="${escapeHtml(a.mese)}">${fmt(r.a)}</td><td class="amount-cell" data-label="${escapeHtml(b.mese)}">${fmt(r.b)}</td>
+        <td class="amount-cell" data-label="Differenza">${r.delta > 0 ? '+' : ''}${fmt(r.delta)}${r.pct === null ? '' : ' (' + (r.pct > 0 ? '+' : '') + r.pct + '%)'}</td></tr>`).join('')}</tbody></table></div>`;
   };
   selA.onchange = calcola; selB.onchange = calcola; calcola();
 }
