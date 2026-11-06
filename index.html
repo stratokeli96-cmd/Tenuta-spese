@@ -1649,6 +1649,13 @@ html, body { overflow-x: hidden; }
       <!-- Macros overview -->
       <div class="macros-row" id="macros-row"></div>
 
+      <!-- Entrate extra -->
+      <div class="widget" id="widget-extra" style="margin-bottom: var(--sp-lg);">
+        <div class="section-title">Entrate extra <span class="section-meta" id="extra-meta"></span></div>
+        <div id="extra-lista"></div>
+        <button class="btn btn-secondary" id="btn-extra-add" style="margin-top: 8px;">+ Entrata extra</button>
+      </div>
+
       <!-- Bento charts -->
       <div class="bento">
         <div class="widget col-7">
@@ -2139,6 +2146,52 @@ html, body { overflow-x: hidden; }
   </div>
 </div>
 
+<!-- ===== MODAL: Nuova entrata extra ===== -->
+<div class="modal-backdrop" id="modal-extra" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3>Entrata extra</h3>
+    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: var(--sp-md);">
+      Rimborso, regalo, lavoretto… va nel totale del mese. Poi decidi tu come ripartirla tra Needs, Wants e Savings.
+    </p>
+    <div class="quick-add">
+      <div class="quick-amount-wrap">
+        <span class="euro">€</span>
+        <input type="number" step="0.01" min="0" id="ex-importo" placeholder="0.00" autocomplete="off" />
+      </div>
+      <div class="field-row">
+        <div class="form-group"><label class="form-label">Data</label><input type="date" id="ex-data" /></div>
+        <div class="form-group"><label class="form-label">Descrizione (opzionale)</label><input type="text" id="ex-desc" placeholder="Es. Rimborso spese" /></div>
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-sm);">
+        <button class="btn btn-secondary" id="ex-cancel">Annulla</button>
+        <button class="btn btn-primary" id="ex-save">Registra</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Ripartizione entrata extra ===== -->
+<div class="modal-backdrop" id="modal-alloc" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3>Ripartisci l'entrata</h3>
+    <p id="alloc-info" style="color: var(--text-muted); font-size: 13px; margin-bottom: var(--sp-md);"></p>
+    <div class="form-row" style="grid-template-columns: repeat(3, 1fr); gap: 10px;">
+      <div class="form-group"><label class="form-label">Needs €</label><input type="number" step="0.01" min="0" id="al-needs" /></div>
+      <div class="form-group"><label class="form-label">Wants €</label><input type="number" step="0.01" min="0" id="al-wants" /></div>
+      <div class="form-group"><label class="form-label">Savings €</label><input type="number" step="0.01" min="0" id="al-savings" /></div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+      <button class="btn btn-ghost" id="al-503020">Dividi 50/30/20</button>
+      <button class="btn btn-ghost" id="al-tutto-savings">Tutto in Savings</button>
+    </div>
+    <p id="alloc-resto" style="margin-top:10px; font-size:13px;"></p>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-md);">
+      <button class="btn btn-secondary" id="al-cancel">Annulla</button>
+      <button class="btn btn-primary" id="al-save">Salva ripartizione</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MODAL: Dettaglio mese archiviato ===== -->
 <div class="modal-backdrop" id="modal-mese" role="dialog" aria-modal="true">
   <div class="modal wide">
@@ -2167,8 +2220,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06b';
-const APP_BUILD_NOTE = 'Storico mesi completo su IndexedDB, dettaglio e confronto mesi, condivisione backup su Drive';
+const APP_VERSION = '2026.11.06c';
+const APP_BUILD_NOTE = 'Entrate extra mensili con ripartizione; storico mesi su IndexedDB, dettaglio e confronto, condivisione backup';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -2608,6 +2661,123 @@ document.addEventListener('keydown', e => {
 /* ============================================================
    DASHBOARD
    ============================================================ */
+/* ---------- Entrate extra ---------- */
+function renderEntrateExtra() {
+  const lista = document.getElementById('extra-lista');
+  const meta = document.getElementById('extra-meta');
+  if (!lista) return;
+  const tot = totaleEntrateExtra(stato), daAss = extraDaAssegnare(stato);
+  meta.textContent = stato.entrateExtra.length ? fmt(tot) + ' totali' + (daAss > 0 ? ' · ' + fmt(daAss) + ' da assegnare' : '') : '';
+  if (!stato.entrateExtra.length) {
+    lista.innerHTML = '<div class="empty-state">Nessuna entrata extra questo mese.</div>';
+    return;
+  }
+  lista.innerHTML = '<div class="table-wrap"><table class="data"><tbody>' + stato.entrateExtra.map(e => {
+    const resto = round2(e.importo - extraAssegnata(e));
+    const split = MACRO_IDS_UI.filter(id => e.alloc[id] > 0).map(id => MACRO_LABEL[id] + ' ' + fmt(e.alloc[id])).join(' · ');
+    return `<tr>
+      <td class="num">${fmtData(e.data)}</td>
+      <td>${escapeHtml(e.descrizione || 'Entrata extra')}<div style="color:var(--text-dim); font-size:11px;">${split ? escapeHtml(split) : ''}${resto > 0 ? (split ? ' · ' : '') + 'da assegnare ' + fmt(resto) : ''}</div></td>
+      <td class="amount-cell">${fmt(e.importo)}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-ghost extra-alloc" data-id="${escapeHtml(e.id)}" style="padding:4px 8px; font-size:11px;">Ripartisci</button>
+        <button class="btn-icon-danger extra-del" data-id="${escapeHtml(e.id)}">elimina</button></td>
+    </tr>`;
+  }).join('') + '</tbody></table></div>';
+  lista.querySelectorAll('.extra-alloc').forEach(b => b.addEventListener('click', () => apriAllocazione(b.dataset.id)));
+  lista.querySelectorAll('.extra-del').forEach(b => b.addEventListener('click', () => eliminaEntrataExtra(b.dataset.id)));
+}
+const MACRO_IDS_UI = ['needs', 'wants', 'savings'];
+
+document.getElementById('btn-extra-add').addEventListener('click', () => {
+  document.getElementById('ex-importo').value = '';
+  document.getElementById('ex-desc').value = '';
+  document.getElementById('ex-data').value = oggi();
+  document.getElementById('modal-extra').classList.add('active');
+  document.getElementById('ex-importo').focus();
+});
+document.getElementById('ex-cancel').addEventListener('click', () => document.getElementById('modal-extra').classList.remove('active'));
+document.getElementById('ex-save').addEventListener('click', () => {
+  const importo = round2(parseFloat(document.getElementById('ex-importo').value));
+  const data = document.getElementById('ex-data').value;
+  if (!(importo > 0)) { toast('Inserisci un importo valido.', 'warning'); return; }
+  if (!data) { toast('Inserisci una data.', 'warning'); return; }
+  const e = { id: uid(), data, descrizione: document.getElementById('ex-desc').value.trim(), importo, alloc: { needs: 0, wants: 0, savings: 0 } };
+  stato.entrateExtra.push(e);
+  salvaStato();
+  document.getElementById('modal-extra').classList.remove('active');
+  toast('Entrata registrata: ' + fmt(importo), 'success');
+  renderDashboard();
+  apriAllocazione(e.id); // propone subito di ripartirla (si può annullare: resta "da assegnare")
+});
+
+let allocId = null;
+function apriAllocazione(id) {
+  const e = stato.entrateExtra.find(x => x.id === id);
+  if (!e) return;
+  allocId = id;
+  document.getElementById('alloc-info').textContent = (e.descrizione || 'Entrata extra') + ' · ' + fmt(e.importo) + '. Lascia vuoto ciò che vuoi tenere "da assegnare".';
+  MACRO_IDS_UI.forEach(m => { document.getElementById('al-' + m).value = e.alloc[m] || ''; });
+  aggiornaRestoAllocazione();
+  document.getElementById('modal-alloc').classList.add('active');
+}
+function leggiAllocazione() {
+  const a = {};
+  MACRO_IDS_UI.forEach(m => { a[m] = document.getElementById('al-' + m).value; });
+  return a;
+}
+function aggiornaRestoAllocazione() {
+  const e = stato.entrateExtra.find(x => x.id === allocId);
+  const el = document.getElementById('alloc-resto');
+  if (!e) return;
+  try {
+    const { alloc } = calcolaAllocazione(e, leggiAllocazione());
+    const resto = round2(e.importo - alloc.needs - alloc.wants - alloc.savings);
+    el.style.color = 'var(--text-muted)';
+    el.textContent = resto > 0 ? 'Restano da assegnare ' + fmt(resto) + '.' : 'Tutta l\'entrata è ripartita.';
+  } catch (err) { el.style.color = 'var(--danger)'; el.textContent = 'Attenzione: ' + err.message + '.'; }
+}
+MACRO_IDS_UI.forEach(m => document.getElementById('al-' + m).addEventListener('input', aggiornaRestoAllocazione));
+document.getElementById('al-503020').addEventListener('click', () => {
+  const e = stato.entrateExtra.find(x => x.id === allocId); if (!e) return;
+  const n = round2(e.importo * 0.5), w = round2(e.importo * 0.3);
+  document.getElementById('al-needs').value = n;
+  document.getElementById('al-wants').value = w;
+  document.getElementById('al-savings').value = round2(e.importo - n - w);
+  aggiornaRestoAllocazione();
+});
+document.getElementById('al-tutto-savings').addEventListener('click', () => {
+  const e = stato.entrateExtra.find(x => x.id === allocId); if (!e) return;
+  document.getElementById('al-needs').value = 0; document.getElementById('al-wants').value = 0;
+  document.getElementById('al-savings').value = e.importo;
+  aggiornaRestoAllocazione();
+});
+document.getElementById('al-cancel').addEventListener('click', () => document.getElementById('modal-alloc').classList.remove('active'));
+document.getElementById('al-save').addEventListener('click', () => {
+  const e = stato.entrateExtra.find(x => x.id === allocId);
+  if (!e) return;
+  let r;
+  try { r = calcolaAllocazione(e, leggiAllocazione()); }
+  catch (err) { toast('Ripartizione non valida: ' + err.message, 'warning', 5000); return; }
+  MACRO_IDS_UI.forEach(m => { stato.saldoRiportato[m] = round2((stato.saldoRiportato[m] || 0) + r.delta[m]); });
+  e.alloc = r.alloc;
+  salvaStato();
+  document.getElementById('modal-alloc').classList.remove('active');
+  toast('Ripartizione salvata.', 'success');
+  const attiva = document.querySelector('.nav-item.active')?.dataset.view;
+  (VIEW_RENDERERS[attiva] || renderDashboard)();
+  renderDashboard();
+});
+function eliminaEntrataExtra(id) {
+  const e = stato.entrateExtra.find(x => x.id === id);
+  if (!e) return;
+  apriModal('Eliminare l\'entrata?', 'Verrà tolta dal totale e dai budget a cui l\'avevi assegnata.', () => {
+    MACRO_IDS_UI.forEach(m => { stato.saldoRiportato[m] = round2((stato.saldoRiportato[m] || 0) - (e.alloc[m] || 0)); });
+    stato.entrateExtra = stato.entrateExtra.filter(x => x.id !== id);
+    salvaStato();
+    renderDashboard();
+  });
+}
+
 let chartDonut = null;
 let chartAndamento = null;
 let chartTopVoci = null;
@@ -2615,11 +2785,12 @@ let donutState = { level: 'macro', macro: null };
 
 function renderDashboard() {
   document.getElementById('current-month-label').textContent = stato.meseCorrente;
-  document.getElementById('reddito-display').textContent = fmtRound(stato.reddito);
+  document.getElementById('reddito-display').textContent = fmtRound(redditoTotale(stato));
+  renderEntrateExtra();
 
   const tB = totBudget();
   const tS = totSpeso();
-  const tR = tB - tS + Object.values(stato.saldoRiportato).reduce((a,v)=>a+(Number(v)||0),0);
+  const tR = round2(tB - tS + Object.values(stato.saldoRiportato).reduce((a,v)=>a+(Number(v)||0),0) + extraDaAssegnare(stato));
 
   document.getElementById('hero-residuo').textContent = fmt(tR);
   document.getElementById('hero-mese').textContent = stato.meseCorrente;
@@ -4689,6 +4860,9 @@ function exportaCSV() {
     const v = macro?.voci.find(v => v.id === m.voce);
     rows.push([m.data, macro?.nome||'', v?.nome||'', m.descrizione||'', m.origine||'manuale', Number(m.importo).toFixed(2).replace('.',',')]);
   });
+  stato.entrateExtra.forEach(e => {
+    rows.push([e.data, 'Entrata', 'Entrata extra', e.descrizione || '', 'manuale', Number(e.importo).toFixed(2).replace('.',',')]);
+  });
   stato.scontrini.forEach(s => {
     rows.push([s.data, 'Needs', 'Alimentari', 'Scontrino ' + s.negozio, s.origine||'manuale', Number(s.totale).toFixed(2).replace('.',',')]);
   });
@@ -4837,7 +5011,8 @@ function renderCambioMese() {
   const budN = stato.macros.needs.budget;
   const budW = stato.macros.wants.budget;
   const budS = stato.macros.savings.budget;
-  const avanzoTot = Math.max(0, budN - sN) + Math.max(0, budW - sW) + Math.max(0, budS - sS);
+  const rp = stato.saldoRiportato || {};
+  const avanzoTot = round2(Math.max(0, budN + (rp.needs||0) - sN) + Math.max(0, budW + (rp.wants||0) - sW) + Math.max(0, budS + (rp.savings||0) - sS) + extraDaAssegnare(stato));
   const orfani = movimentiOrfani();
 
   const orfaniBox = orfani.length > 0
@@ -4847,7 +5022,7 @@ function renderCambioMese() {
   div.innerHTML = `
     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Mese in chiusura</div><strong style="font-family:var(--font-display); font-size:22px;">${escapeHtml(stato.meseCorrente)}</strong></div>
-      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Reddito mese</div><strong class="num" style="font-size:18px;">${fmt(stato.reddito)}</strong></div>
+      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Reddito mese</div><strong class="num" style="font-size:18px;">${fmt(redditoTotale(stato))}</strong></div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Avanzo totale (perso)</div><strong class="num" style="font-size:18px; color:var(--text-muted);">${fmt(avanzoTot)}</strong></div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Needs spesi</div><strong class="num" style="font-size:18px;">${fmt(sN)}</strong> / ${fmt(budN)}</div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Wants spesi</div><strong class="num" style="font-size:18px;">${fmt(sW)}</strong> / ${fmt(budW)}</div>
@@ -4868,7 +5043,7 @@ function renderCambioMese() {
     tbody.innerHTML = stato.archivioMesi.map(m => `
       <tr class="riga-mese" data-id="${escapeHtml(m.id)}" style="cursor:pointer;" tabindex="0">
         <td>${escapeHtml(m.mese)} <span style="color:var(--text-dim); font-size:11px;">· ${Number(m.nMovimenti || (m.movimenti||[]).length || 0) + Number(m.nScontrini || (m.scontrini||[]).length || 0)} reg.</span></td>
-        <td class="amount-cell">${fmt(m.reddito||0)}</td>
+        <td class="amount-cell">${fmt(redditoMese(m))}</td>
         <td class="amount-cell">${fmt(m.spesoNeeds||0)}</td>
         <td class="amount-cell">${fmt(m.spesoWants||0)}</td>
         <td class="amount-cell">${fmt(m.versatoSavings||0)}</td>
@@ -4990,7 +5165,7 @@ document.getElementById('btn-chiudi-mese').addEventListener('click', () => {
   }
   apriModal(
     'Chiudere il mese?',
-    `Chiudo ${stato.meseCorrente} e apro ${nuovoMese} con reddito ${fmt(nuovoReddito)}. Tutti i contatori vengono azzerati (no roll-over) e i budget ricalibrati dalle percentuali.`,
+    `Chiudo ${stato.meseCorrente} e apro ${nuovoMese} con reddito ${fmt(nuovoReddito)}. Tutti i contatori vengono azzerati (no roll-over) e i budget ricalibrati dalle percentuali.` + (extraDaAssegnare(stato) > 0 ? ` Hai ${fmt(extraDaAssegnare(stato))} di entrate extra non ripartite: finiranno nell'avanzo del mese.` : ''),
     () => proceedChiusura(nuovoMese, nuovoReddito)
   );
 });
@@ -5023,16 +5198,20 @@ function proceedChiusura(nuovoMese, nuovoReddito) {
   const budN = stato.macros.needs.budget;
   const budW = stato.macros.wants.budget;
   const budS = stato.macros.savings.budget;
-  const avanzoTot =
-      Math.max(0, budN - sN)
-    + Math.max(0, budW - sW)
-    + Math.max(0, budS - sS);
+  const rp = stato.saldoRiportato || {};
+  const avanzoTot = round2(
+      Math.max(0, budN + (rp.needs||0) - sN)
+    + Math.max(0, budW + (rp.wants||0) - sW)
+    + Math.max(0, budS + (rp.savings||0) - sS)
+    + extraDaAssegnare(stato));
 
   stato.archivioMesi.push({
     id: uid(),
     schemaVersion: SCHEMA_VERSION,
     mese: stato.meseCorrente,
     reddito: stato.reddito,
+    extraTot: totaleEntrateExtra(stato),
+    entrateExtra: stato.entrateExtra.slice(),
     spesoNeeds: sN,
     spesoWants: sW,
     versatoSavings: sS,
@@ -5046,6 +5225,7 @@ function proceedChiusura(nuovoMese, nuovoReddito) {
   stato.movimenti = [];
   stato.scontrini = [];
   stato.righeProdotto = [];
+  stato.entrateExtra = [];
   stato.meseCorrente = nuovoMese;
 
   // Ricalibra budget macro+voci dal nuovo reddito

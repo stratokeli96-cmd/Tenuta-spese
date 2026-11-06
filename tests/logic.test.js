@@ -170,3 +170,48 @@ test('archivio.js è precaricato dal service worker e copiato nel deploy', () =>
   assert.match(sw, /'\.\/logic\.js'/);
   assert.match(wf, /archivio\.js/);
 });
+
+test('entrate extra: totali, reddito totale, da assegnare', () => {
+  const st = stato({ reddito: 1000, entrateExtra: [
+    { id: 'e1', importo: 100.10, alloc: { needs: 50, wants: 30.05, savings: 0 } },
+    { id: 'e2', importo: 50, alloc: { needs: 0, wants: 0, savings: 0 } }
+  ] });
+  assert.equal(L.totaleEntrateExtra(st), 150.1);
+  assert.equal(L.redditoTotale(st), 1150.1);
+  assert.equal(L.extraAssegnata(st.entrateExtra[0]), 80.05);
+  assert.equal(L.extraDaAssegnare(st), 70.05);
+});
+
+test('calcolaAllocazione: delta rispetto alla ripartizione precedente e validazioni', () => {
+  const e = { importo: 100, alloc: { needs: 20, wants: 0, savings: 0 } };
+  const r = L.calcolaAllocazione(e, { needs: 50, wants: 30, savings: 20 });
+  assert.deepEqual(r.delta, { needs: 30, wants: 30, savings: 20 });
+  assert.deepEqual(r.alloc, { needs: 50, wants: 30, savings: 20 });
+  assert.throws(() => L.calcolaAllocazione(e, { needs: 60, wants: 50, savings: 0 }), /supera/);
+  assert.throws(() => L.calcolaAllocazione(e, { needs: -1, wants: 0, savings: 0 }), /negative/);
+  // quote parziali ammesse (il resto resta da assegnare); testo non numerico = 0
+  assert.deepEqual(L.calcolaAllocazione(e, { needs: '10', wants: 'x' }).alloc, { needs: 10, wants: 0, savings: 0 });
+});
+
+test('validaStato normalizza le entrate extra', () => {
+  const g = L.copiaProfonda(L.STATO_DEFAULT);
+  g.entrateExtra = [
+    { id: 'a', importo: '25,5', alloc: { needs: 10 } },        // importo non numerico valido -> 0 -> scartata
+    { id: 'b', importo: 40, alloc: { needs: 30, wants: 30 } }, // alloc > importo -> azzerata
+    { importo: 10.005, descrizione: 'Regalo', alloc: { savings: 10 } },
+    'spazzatura'
+  ];
+  const ok = L.validaStato(g);
+  assert.equal(ok.entrateExtra.length, 2);
+  assert.deepEqual(ok.entrateExtra[0].alloc, { needs: 0, wants: 0, savings: 0 });
+  assert.equal(ok.entrateExtra[1].importo, 10.01);
+  assert.equal(typeof ok.entrateExtra[1].id, 'string');
+  assert.equal(L.validaStato({ ...L.copiaProfonda(L.STATO_DEFAULT) }).entrateExtra.length, 0); // backup vecchio: campo assente
+});
+
+test('redditoMese e confrontaMesi includono le entrate extra', () => {
+  assert.equal(L.redditoMese({ reddito: 1000, extraTot: 50.5 }), 1050.5);
+  assert.equal(L.redditoMese({ reddito: 1000 }), 1000);   // mesi archiviati prima della funzione
+  const r = L.confrontaMesi({ reddito: 1000 }, { reddito: 1000, extraTot: 100 }).find(x => x.nome === 'Reddito');
+  assert.equal(r.delta, 100);
+});

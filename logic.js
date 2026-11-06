@@ -43,6 +43,7 @@ const STATO_DEFAULT = {
   righeProdotto: [],
   storicoProdotti: {},
   archivioMesi: [],
+  entrateExtra: [],
   saldoRiportato: { needs:0, wants:0, savings:0 }
 };
 
@@ -236,6 +237,15 @@ function validaStato(input) {
     });
   }
 
+  out.entrateExtra = _arrObj(d.entrateExtra).map(e => {
+    const importo = Math.max(0, round2(_num(e.importo)));
+    const alloc = { needs: 0, wants: 0, savings: 0 };
+    MACRO_IDS.forEach(id => { alloc[id] = Math.max(0, round2(_num(e.alloc && e.alloc[id]))); });
+    const somma = round2(alloc.needs + alloc.wants + alloc.savings);
+    if (somma > importo) MACRO_IDS.forEach(id => { alloc[id] = 0; }); // incoerente: da riassegnare
+    return { id: _str(e.id) || uid(), data: _str(e.data), descrizione: _str(e.descrizione), importo, alloc };
+  }).filter(e => e.importo > 0);
+
   const idVisti = new Set();
   out.archivioMesi = _arrObj(d.archivioMesi).map(a => {
     let id = _str(a.id) || uid();
@@ -289,14 +299,52 @@ function ricomponiArchivio(stLeggero, dettagli) {
     return { ...base, movimenti: r ? r.movimenti : (a.movimenti || []), scontrini: r ? r.scontrini : (a.scontrini || []) };
   }) };
 }
+/** Reddito totale di un mese archiviato (base + entrate extra). */
+function redditoMese(a) { return round2(_num(a.reddito) + _num(a.extraTot)); }
 /** Differenze tra due mesi archiviati (b - a), per macro. */
 function confrontaMesi(a, b) {
-  const campi = [['Needs', 'spesoNeeds'], ['Wants', 'spesoWants'], ['Savings', 'versatoSavings'], ['Avanzo', 'avanzoTotale'], ['Reddito', 'reddito']];
+  const campi = [['Needs', 'spesoNeeds'], ['Wants', 'spesoWants'], ['Savings', 'versatoSavings'], ['Avanzo', 'avanzoTotale'], ['Reddito', null]];
   return campi.map(([nome, k]) => {
-    const va = round2(_num(a[k])), vb = round2(_num(b[k]));
+    const va = k ? round2(_num(a[k])) : redditoMese(a), vb = k ? round2(_num(b[k])) : redditoMese(b);
     const delta = round2(vb - va);
     return { nome, a: va, b: vb, delta, pct: va !== 0 ? Math.round(delta / va * 100) : null };
   });
+}
+
+/* ============================================================
+   ENTRATE EXTRA
+   Un'entrata extra va nel totale del mese. L'utente decide poi come
+   ripartirla tra Needs/Wants/Savings (`alloc`): la quota assegnata
+   aumenta il budget della macro per il mese (via saldoRiportato, che
+   la chiusura mese azzera: l'extra non si trascina).
+   ============================================================ */
+function totaleEntrateExtra(st) {
+  return round2((st.entrateExtra || []).reduce((a, e) => a + Number(e.importo || 0), 0));
+}
+function redditoTotale(st) { return round2(Number(st.reddito || 0) + totaleEntrateExtra(st)); }
+function extraAssegnata(e) {
+  const a = e.alloc || {};
+  return round2(MACRO_IDS.reduce((t, id) => t + Number(a[id] || 0), 0));
+}
+function extraDaAssegnare(st) {
+  return round2((st.entrateExtra || []).reduce((a, e) => a + (Number(e.importo || 0) - extraAssegnata(e)), 0));
+}
+/**
+ * Valida una nuova ripartizione per un'entrata. Restituisce {alloc, delta}:
+ * `delta` = variazione da applicare al budget extra di ciascuna macro.
+ * Lancia Error se negativa o se supera l'importo dell'entrata.
+ */
+function calcolaAllocazione(entrata, nuova) {
+  const alloc = {}; const delta = {};
+  MACRO_IDS.forEach(id => {
+    const v = round2(_num(nuova && nuova[id]));
+    if (v < 0) throw new Error('le quote non possono essere negative');
+    alloc[id] = v;
+    delta[id] = round2(v - Number((entrata.alloc || {})[id] || 0));
+  });
+  const tot = round2(alloc.needs + alloc.wants + alloc.savings);
+  if (tot > round2(entrata.importo)) throw new Error('la somma (' + tot.toFixed(2) + ') supera l\'entrata (' + round2(entrata.importo).toFixed(2) + ')');
+  return { alloc, delta };
 }
 
 /** Importa un oggetto qualunque (nuovo o vecchio schema) e restituisce uno stato valido. */
@@ -339,6 +387,7 @@ if (typeof module !== 'undefined' && module.exports) {
     STATO_DEFAULT, SCHEMA_VERSION, VOCE_SCONTRINI, oggi, round2, uid, escapeHtml, csvCell, copiaProfonda,
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
+    totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
 }

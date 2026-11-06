@@ -32,7 +32,8 @@ Chart.js, chartjs-chart-treemap, Tesseract.js e pdf.js arrivano da jsDelivr con 
 - Nuove regole di calcolo/validazione vanno in `logic.js` con un test, non inline.
 - I dati utente stanno nel `localStorage`; export/import JSON (`dati_DD-MM-YYYY_HH-MM.json`) è il backup. Questi file contengono dati personali e non vanno mai committati (vedi `.gitignore`). L'import passa da `importaStato()` e conserva una copia in `smartFinance_v1_prima_import`; dati illegibili vengono copiati in `smartFinance_v1_corrotto_<timestamp>`.
 - Mese corrente = localStorage (sincrono). Mesi chiusi = IndexedDB (`Archivio`), mai due copie in conflitto: prima si scrive in IndexedDB, poi si alleggerisce localStorage. Il file di export ricompone tutto (stesso schema dei vecchi backup).
-- `saldoRiportato` è un riporto legacy (arriva solo dalla migrazione del vecchio schema) ed è azzerato alla prima chiusura mese.
+- Entrate extra (`stato.entrateExtra`): vanno nel totale del mese; la quota ripartita su una macro (`alloc`) aumenta il budget di quella macro tramite `saldoRiportato`, che la chiusura mese azzera (l'extra non si trascina). La parte non ripartita finisce nell'avanzo alla chiusura.
+- `saldoRiportato` contiene il riporto legacy (solo dalla migrazione del vecchio schema) più le quote extra ripartite; è azzerato a ogni chiusura mese.
 
 ## Documentazione utente
 
