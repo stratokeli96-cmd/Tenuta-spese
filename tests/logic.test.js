@@ -424,3 +424,22 @@ test('messaggioErroreGemini: il 404 riporta il dettaglio di Google (senza la chi
   const m = L.messaggioErroreGemini(404, 'models/gemini-x is not found for API version v1beta');
   assert.match(m, /modello non trovato \(models\/gemini-x is not found/);
 });
+
+test('conRagionamentoRidotto: solo Gemini 3.x e alias latest; gli altri modelli restano invariati', () => {
+  const corpo = { contents: [], generationConfig: { temperature: 0, maxOutputTokens: 1024 } };
+  for (const m of ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-3-flash', 'gemini-3.5-flash']) {
+    const r = L.conRagionamentoRidotto(corpo, m);
+    assert.notEqual(r, corpo, m);
+    assert.deepEqual(r.generationConfig, { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'low' } }, m);
+  }
+  assert.equal(corpo.generationConfig.thinkingConfig, undefined);   // l'originale non viene modificato
+  for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash-exp', '', null]) assert.equal(L.conRagionamentoRidotto(corpo, m), corpo, String(m));
+  assert.deepEqual(L.conRagionamentoRidotto({ contents: [] }, 'gemini-flash-latest').generationConfig, { thinkingConfig: { thinkingLevel: 'low' } });
+});
+
+test('erroreRagionamentoGemini: solo un 400 che cita il thinking', () => {
+  assert.equal(L.erroreRagionamentoGemini(400, 'Unable to submit request because thinking level is not supported by this model'), true);
+  assert.equal(L.erroreRagionamentoGemini(400, 'API key not valid. Please pass a valid API key.'), false);
+  assert.equal(L.erroreRagionamentoGemini(404, 'thinking'), false);
+  assert.equal(L.erroreRagionamentoGemini(400, undefined), false);
+});

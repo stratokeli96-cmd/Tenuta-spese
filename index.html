@@ -2352,7 +2352,7 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06h';
+const APP_VERSION = '2026.11.06i';
 const APP_BUILD_NOTE = 'Gemini: prova di connessione corretta per i modelli che ragionano, errori più dettagliati; ricerca automatica del modello';
 
 /* ============================================================
@@ -3836,7 +3836,18 @@ function ridimensionaJpeg(dataUrl, max = 1600, qualita = 0.8) {
   });
 }
 
-async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
+/** Chiama Gemini col ragionamento ridotto (se il modello lo prevede); se il modello lo rifiuta (400) riprova senza. */
+async function chiamaGemini(corpo, ia, timeoutMs = 90000) {
+  const ridotto = conRagionamentoRidotto(corpo, ia.modello);
+  if (ridotto === corpo) return richiestaGemini(corpo, ia, timeoutMs);
+  try { return await richiestaGemini(ridotto, ia, timeoutMs); }
+  catch (e) {
+    if (!erroreRagionamentoGemini(e.status, e.dettaglio)) throw e;
+    return richiestaGemini(corpo, ia, timeoutMs);
+  }
+}
+
+async function richiestaGemini(corpo, ia, timeoutMs) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -3851,6 +3862,7 @@ async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
       try { det = (await res.json()).error?.message || ''; } catch (_) {}
       const err = new Error(messaggioErroreGemini(res.status, det));
       err.status = res.status;
+      err.dettaglio = det;
       throw err;
     }
     const j = await res.json();
@@ -3863,7 +3875,7 @@ async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
     }
     return testo;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Gemini non ha risposto in tempo');
+    if (e.name === 'AbortError') throw new Error('Gemini non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi: riprova, meglio con una connessione stabile');
     if (e instanceof TypeError) throw new Error('rete non raggiungibile');
     throw e;
   } finally { clearTimeout(t); }
@@ -5977,7 +5989,7 @@ function iaDaCampi() {
 }
 /** La richiesta di prova riesce se Google risponde 200: anche un testo vuoto (modelli che "ragionano") prova che chiave e modello funzionano. */
 async function provaGemini(ia) {
-  try { await chiamaGemini(PROVA_GEMINI, ia, 30000); }
+  try { await chiamaGemini(PROVA_GEMINI, ia, 45000); }
   catch (e) { if (!e.rispostaVuota || /bloccata/.test(e.message)) throw e; }
 }
 const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { maxOutputTokens: 1024 } };

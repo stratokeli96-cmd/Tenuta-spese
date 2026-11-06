@@ -650,6 +650,21 @@ function messaggioErroreGemini(status, dettaglio) {
   if (status >= 500) return 'servizio Gemini temporaneamente non disponibile';
   return 'errore Gemini ' + status;
 }
+
+/**
+ * I modelli Gemini 3.x e gli alias *-latest "ragionano" prima di rispondere (livello medio/alto di
+ * default): con foto e risposta JSON possono impiegare più dell'attesa dell'app. Per leggere uno
+ * scontrino basta un ragionamento minimo. Per gli altri modelli restituisce `corpo` tale e quale
+ * (stesso oggetto), perché i 2.x usano un'altra opzione e rifiuterebbero questa.
+ */
+function conRagionamentoRidotto(corpo, modello) {
+  if (!/^gemini-(?:3|flash-latest|flash-lite-latest)/i.test(String(modello || ''))) return corpo;
+  return { ...corpo, generationConfig: { ...(corpo.generationConfig || {}), thinkingConfig: { thinkingLevel: 'low' } } };
+}
+/** Un 400 che cita il "thinking": il modello non accetta il livello di ragionamento, si riprova senza. */
+function erroreRagionamentoGemini(status, dettaglio) {
+  return status === 400 && /thinking/i.test(String(dettaglio || ''));
+}
 function _tokenNome(s) { return normTesto(s).split(' ').filter(Boolean); }
 /**
  * Quanto la lettura `letta` coincide con il riferimento `rif` (entrambe: [{prodotto, prezzo}]).
@@ -753,7 +768,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, scegliModelloGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
