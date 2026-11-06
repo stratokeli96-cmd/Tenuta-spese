@@ -645,7 +645,7 @@ function messaggioErroreGemini(status, dettaglio) {
   if (status === 400 && /api key|api_key/i.test(d)) return 'chiave API non valida: controllala in Impostazioni';
   if (status === 400) return 'richiesta rifiutata da Gemini' + (d ? ' (' + d + ')' : '');
   if (status === 401 || status === 403) return 'chiave API non autorizzata o non abilitata per questo modello';
-  if (status === 404) return 'modello non trovato: controlla il nome del modello in Impostazioni';
+  if (status === 404) return 'modello non trovato' + (d ? ' (' + d + ')' : '') + ': controlla il nome del modello in Impostazioni';
   if (status === 429) return 'quota gratuita esaurita o troppe richieste: riprova tra poco';
   if (status >= 500) return 'servizio Gemini temporaneamente non disponibile';
   return 'errore Gemini ' + status;
