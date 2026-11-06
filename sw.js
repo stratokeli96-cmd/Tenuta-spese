@@ -8,16 +8,21 @@
  * Nessun dato utente passa di qui: localStorage resta sul dispositivo.
  */
 
-// Da incrementare ad ogni release insieme a APP_VERSION in index.html:
-// forza l'eliminazione della shell cache precedente (vedi 'activate' sotto).
-const CACHE_VERSION = 'v10';
+// Deve essere IDENTICA a APP_VERSION in index.html (lo verifica `node --test`).
+// Cambia ad ogni release e forza l'eliminazione della shell cache precedente.
+const CACHE_VERSION = '2026.11.06a';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
-const RUNTIME_CACHE = 'tenuta-runtime-' + CACHE_VERSION;
+// La cache degli asset CDN (Chart.js, Tesseract, tessdata...) NON è versionata:
+// sono file immutabili (versione nell'URL) e riscaricarli ad ogni release
+// romperebbe OCR e grafici offline subito dopo un aggiornamento.
+const RUNTIME_CACHE = 'tenuta-runtime';
+const RUNTIME_MAX_ENTRIES = 80;
 
 /* File locali che compongono l'app shell. */
 const SHELL_ASSETS = [
   './',
   './index.html',
+  './logic.js',
   './manifest.json',
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',
@@ -31,7 +36,10 @@ self.addEventListener('install', (event) => {
       // addAll() passerebbe per la cache HTTP: si precarica esplicitamente
       // con cache 'reload' per non installare subito una shell già vecchia.
       .then((cache) => Promise.all(SHELL_ASSETS.map((u) =>
-        fetch(new Request(u, { cache: 'reload' })).then((res) => cache.put(u, res))
+        fetch(new Request(u, { cache: 'reload' })).then((res) => {
+          if (!res.ok) throw new Error('Precaricamento fallito: ' + u + ' (' + res.status + ')');
+          return cache.put(u, res);
+        })
       )))
       .then(() => self.skipWaiting())
   );
@@ -42,7 +50,8 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then((keys) => Promise.all(
         keys
-          .filter((k) => k !== SHELL_CACHE && k !== RUNTIME_CACHE)
+          .filter((k) => k !== SHELL_CACHE && k !== RUNTIME_CACHE &&
+                         (k.startsWith('tenuta-shell-') || k.startsWith('tenuta-runtime-')))
           .map((k) => caches.delete(k))
       ))
       .then(() => self.clients.claim())
@@ -59,6 +68,13 @@ function fetchSenzaCacheHttp(req) {
   } catch (_) {
     return fetch(req);
   }
+}
+
+/** Mantiene al massimo RUNTIME_MAX_ENTRIES risorse, eliminando le più vecchie. */
+function limitaCache(cache) {
+  return cache.keys().then((keys) =>
+    Promise.all(keys.slice(0, Math.max(0, keys.length - RUNTIME_MAX_ENTRIES)).map((k) => cache.delete(k)))
+  );
 }
 
 self.addEventListener('fetch', (event) => {
@@ -81,8 +97,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetchSenzaCacheHttp(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(req, copy));
+          // Mai salvare 404/500: offline verrebbero serviti al posto della pagina buona.
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(req, copy));
+          }
           return res;
         })
         .catch(() =>
@@ -101,9 +120,14 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
       return fetch(req)
         .then((res) => {
-          // Salva anche le risposte opache (no-cors): non ispezionabili ma riservibili.
-          const copy = res.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => cache.put(req, copy));
+          // Si salvano solo risposte buone; le opache (es. CSS di Google Fonts) non sono
+          // ispezionabili ma riservibili. Gli errori HTTP non entrano mai in cache.
+          if (res.ok || res.type === 'opaque') {
+            const copy = res.clone();
+            caches.open(RUNTIME_CACHE).then((cache) =>
+              cache.put(req, copy).then(() => limitaCache(cache))
+            );
+          }
           return res;
         })
         .catch(() => cached);

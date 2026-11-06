@@ -53,7 +53,11 @@ nella cartella Drive e dopo qualche secondo è disponibile sul cloud.
 
 ## Note
 
-- Il file `index.html` è autosufficiente: non richiede server né
-  dipendenze. Può essere copiato/spostato liberamente.
+- L'app richiede `index.html`, `logic.js`, `sw.js`, `manifest.json` e `icons/`
+  (non solo `index.html`). Al **primo avvio serve la rete**: Chart.js, OCR (Tesseract
+  + dati italiano) e pdf.js si scaricano da CDN e poi restano in cache per l'uso offline.
+- Per avviare via PWA/service worker serve un server (`python3 -m http.server`) o
+  GitHub Pages; aprendo il file con `file://` l'app funziona ma senza service worker.
+- Dalla Dashboard compare un promemoria se l'ultimo backup JSON ha più di 14 giorni.
 - I dati di lavoro persistono nel `localStorage` del browser. L'export è il
   meccanismo di backup/sincronizzazione tra macchine.
