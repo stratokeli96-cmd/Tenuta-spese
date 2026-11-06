@@ -6,8 +6,8 @@
    continua a tenere tutto in localStorage come prima.
    ============================================================ */
 const Archivio = (() => {
-  const DB = 'tenuta-spese', VERSIONE = 1;
-  const STORE = 'mesi', STORE_BACKUP = 'mesi_prima_import';
+  const DB = 'tenuta-spese', VERSIONE = 2;
+  const STORE = 'mesi', STORE_BACKUP = 'mesi_prima_import', STORE_CASI = 'casi_scontrini';
   let db = null;
 
   function init() {
@@ -16,7 +16,7 @@ const Archivio = (() => {
       let req;
       try { req = indexedDB.open(DB, VERSIONE); } catch (_) { return resolve(false); }
       req.onupgradeneeded = () => {
-        [STORE, STORE_BACKUP].forEach(n => {
+        [STORE, STORE_BACKUP, STORE_CASI].forEach(n => {
           if (!req.result.objectStoreNames.contains(n)) req.result.createObjectStore(n, { keyPath: 'id' });
         });
       };
@@ -56,6 +56,10 @@ const Archivio = (() => {
       await richiesta(corrente.clear());
       await Promise.all(recs.map(r => richiesta(corrente.put(r))));
     }),
+    /** Casi di prova degli scontrini (OCR locale vs Gemini vs correzione finale), per migliorare l'OCR. */
+    salvaCaso: rec => tx([STORE_CASI], 'readwrite', t => richiesta(t.objectStore(STORE_CASI).put(rec))),
+    tuttiCasi: () => tx([STORE_CASI], 'readonly', t => richiesta(t.objectStore(STORE_CASI).getAll())),
+    svuotaCasi: () => tx([STORE_CASI], 'readwrite', t => richiesta(t.objectStore(STORE_CASI).clear())),
     backupPrimaImport: () => tx([STORE_BACKUP], 'readonly', t => richiesta(t.objectStore(STORE_BACKUP).getAll()))
   };
   return api;

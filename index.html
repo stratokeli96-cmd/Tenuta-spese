@@ -1753,7 +1753,8 @@ html, body { overflow-x: hidden; }
           </div>
 
           <!-- Esito dei checkpoint di validazione: errori bloccanti e avvisi. -->
-          <div id="ocr-alerts"></div>
+          <div id="ocr-confronto"></div>
+        <div id="ocr-alerts"></div>
 
           <!-- Fallback: testo grezzo riconosciuto, per inserimento manuale
                quando il parsing non riesce a strutturare le voci. -->
@@ -1868,6 +1869,15 @@ html, body { overflow-x: hidden; }
           <h1 class="page-title">Storico prodotti</h1>
           <p class="page-subtitle">BI personale. Identifica l'80/20 dei consumi e i prodotti più frequenti.</p>
         </div>
+      </div>
+
+      <div class="widget" style="margin-bottom: var(--sp-lg);" id="widget-analisi-prodotti">
+        <div class="section-title">Dove spendo
+          <span class="section-meta"><select id="analisi-periodo" style="padding:4px 8px;">
+            <option value="1">Mese corrente</option><option value="3">Ultimi 3 mesi</option><option value="6">Ultimi 6 mesi</option><option value="0">Tutto</option>
+          </select></span>
+        </div>
+        <div id="analisi-corpo"></div>
       </div>
 
       <div class="widget" style="margin-bottom: var(--sp-lg);">
@@ -2017,6 +2027,37 @@ html, body { overflow-x: hidden; }
             <input type="file" id="file-import" accept=".json" style="display: none;" />
           </label>
           <button class="btn btn-danger-outline" id="btn-reset-tutto" style="margin-left: auto;">Reset totale</button>
+        </div>
+      </div>
+
+      <div class="widget" style="margin-top: var(--sp-lg);" id="widget-ia">
+        <div class="section-title">IA per gli scontrini (Gemini)</div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 10px;">
+          Con Gemini la <strong>foto dello scontrino viene inviata a Google</strong> per leggerla con più precisione (piano gratuito: le richieste possono essere usate da Google per migliorare i suoi servizi).
+          Resta disattivato finché non lo abiliti. La chiave è salvata <strong>solo su questo dispositivo</strong> e non finisce nei backup.
+        </p>
+        <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="ia-attivo" /> Usa Gemini per analizzare gli scontrini</label>
+        <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
+          <div class="form-group"><label class="form-label">Chiave API (Google AI Studio)</label><input type="password" id="ia-chiave" autocomplete="off" placeholder="incolla qui la chiave" /></div>
+          <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" placeholder="gemini-2.5-flash" /></div>
+        </div>
+        <label style="display:flex; gap:8px; align-items:center; margin:8px 0;"><input type="checkbox" id="ia-foto" /> Conserva una copia ridotta della foto nei casi di prova (serve a migliorare l'OCR)</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-ia-salva">Salva</button>
+          <button class="btn btn-secondary" id="btn-ia-test">Prova la connessione</button>
+        </div>
+        <p id="ia-stato" style="font-size:13px; margin-top:8px;"></p>
+
+        <div class="section-title" style="margin-top: var(--sp-lg);">Casi di prova per migliorare l'OCR</div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
+          Ogni scontrino salvato conserva il testo dell'OCR locale, la lettura di Gemini e la tua correzione finale. Servono per misurare quanto l'OCR integrato è affidabile e per migliorarlo:
+          esporta il file e passalo a Claude per aggiornare il parser. Quando l'accuratezza è alta puoi spegnere Gemini.
+        </p>
+        <p id="ia-casi-info" style="font-size:13px; margin-bottom:8px;"></p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-secondary" id="btn-casi-export">Esporta casi di prova</button>
+          <label style="font-size:12px;"><input type="checkbox" id="casi-con-foto" /> includi le foto</label>
+          <button class="btn btn-danger-outline" id="btn-casi-svuota" style="margin-left:auto;">Elimina i casi</button>
         </div>
       </div>
 
@@ -2241,8 +2282,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06d';
-const APP_BUILD_NOTE = 'Import estratti conto CSV/XLSX; entrate extra mensili; storico mesi su IndexedDB, confronto, condivisione backup';
+const APP_VERSION = '2026.11.06e';
+const APP_BUILD_NOTE = 'Gemini per gli scontrini con casi di prova, analisi dove spendo, import estratti conto, entrate extra, storico mesi';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3680,28 +3721,115 @@ function gestisciSelezioneFile(e) {
 ocrInput.addEventListener('change', gestisciSelezioneFile);
 
 
+/* ---------- Gemini: configurazione e client ---------- */
+const IA_KEY = 'tenuta-spese.ia';   // SOLO localStorage del dispositivo: mai in `stato`, quindi mai nei backup
+const IA_MODELLO_DEFAULT = 'gemini-2.5-flash';
+function configIA() {
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem(IA_KEY) || '{}') || {}; } catch (_) {}
+  return { attivo: !!c.attivo, chiave: String(c.chiave || ''), modello: String(c.modello || IA_MODELLO_DEFAULT).trim() || IA_MODELLO_DEFAULT, salvaFoto: !!c.salvaFoto };
+}
+function salvaConfigIA(c) { try { localStorage.setItem(IA_KEY, JSON.stringify(c)); return true; } catch (_) { return false; } }
+const geminiPronto = () => { const c = configIA(); return c.attivo && c.chiave.length > 10; };
+
+/** Immagine -> JPEG ridotto (lato max `max` px): meno dati inviati, richiesta più veloce. */
+function ridimensionaJpeg(dataUrl, max = 1600, qualita = 0.8) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', qualita);
+      resolve({ mime: 'image/jpeg', base64: url.split(',')[1], dataUrl: url });
+    };
+    img.onerror = () => reject(new Error('immagine non leggibile'));
+    img.src = dataUrl;
+  });
+}
+
+async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(ia.modello) + ':generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ia.chiave },   // chiave in header, mai nell'URL
+      body: JSON.stringify(corpo),
+      signal: ctrl.signal
+    });
+    if (!res.ok) {
+      let det = '';
+      try { det = (await res.json()).error?.message || ''; } catch (_) {}
+      throw new Error(messaggioErroreGemini(res.status, det));
+    }
+    const j = await res.json();
+    const testo = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+    if (!testo) throw new Error(j.promptFeedback?.blockReason ? 'richiesta bloccata da Gemini (' + j.promptFeedback.blockReason + ')' : 'risposta vuota da Gemini');
+    return testo;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Gemini non ha risposto in tempo');
+    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
+async function analizzaConGemini(pagine) {
+  const ia = configIA();
+  const imgs = [];
+  for (const p of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(p));
+  const testo = await chiamaGemini(costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI), ia);
+  return { lettura: normalizzaRispostaGemini(testo, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null };
+}
+
+/** OCR locale (Tesseract) su tutte le pagine; restituisce {testo, parsed}. */
+async function ocrLocale(pagine) {
+  const testiPagina = [];
+  for (let p = 0; p < pagine.length; p++) {
+    const etichettaPag = pagine.length > 1 ? ` · pagina ${p + 1}/${pagine.length}` : '';
+    ocrStatus.textContent = 'Pre-processing immagine…' + etichettaPag;
+    const varianti = await preprocessReceiptImage(pagine[p]);
+    testiPagina.push(await ocrPaginaConRitentativi(varianti, etichettaPag));
+  }
+  // Le pagine si concatenano PRIMA del parsing: il TOTALE sta sull'ultima,
+  // le voci sulle precedenti, e i checkpoint di coerenza devono vederli insieme.
+  const testo = testiPagina.filter(Boolean).join('\n');
+  return { testo, parsed: parseScontrino(testo) };
+}
+
+/* Lettura in corso: tiene insieme OCR locale, Gemini e (al salvataggio) la correzione finale. */
+let ultimaLettura = null;
+
+function aggiornaConfrontoIA() {
+  const L0 = ultimaLettura;
+  const box = document.getElementById('ocr-confronto');
+  if (!box || !L0 || !L0.ocr || !L0.gemini) return;
+  const c = confrontaLetture(L0.ocr.righe, L0.gemini.righe);
+  box.innerHTML = `<div class="alert info" style="margin-bottom:10px;">Confronto: l'OCR locale ha letto <strong>${c.righeUguali} righe su ${Math.max(c.righeLette, c.righeRif)}</strong> uguali a Gemini (${Math.round(c.accuratezza * 100)}%). Il confronto finale, dopo la tua correzione, migliora le statistiche in Impostazioni.</div>`;
+}
+
 async function gestisciFileOCR(file) {
   ocrPreview.classList.remove('active');
   ocrProgress.classList.add('active');
   ocrProgressFill.style.width = '0%';
   ocrStatus.textContent = 'Caricamento file…';
+  const confrontoBox = document.getElementById('ocr-confronto');
+  if (confrontoBox) confrontoBox.innerHTML = '';
 
   try {
     // HEIC/HEIF non sono decodificabili da <img>/canvas nei browser desktop.
-    // Diamo subito un messaggio chiaro per evitare un OCR su immagine vuota.
     if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type)) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
     }
-
-    if (typeof Tesseract === 'undefined') {
+    const usaGemini = geminiPronto();
+    const haOcr = typeof Tesseract !== 'undefined';
+    if (!haOcr && !usaGemini) {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
 
-    // Lo scanner documenti nativo di iOS (File → "Scansiona documenti", cioè
-    // VNDocumentCameraViewController: bordi automatici, correzione prospettiva)
-    // consegna un PDF con UNA PAGINA PER SCATTO. Vanno quindi processate tutte
-    // le pagine, non solo la prima, altrimenti di uno scontrino lungo scansionato
-    // in più riprese si perde tutto tranne il primo pezzo.
+    // Lo scanner documenti nativo di iOS consegna un PDF con UNA PAGINA PER SCATTO:
+    // vanno processate tutte le pagine, non solo la prima.
     let pagine;
     if (file.type === 'application/pdf') {
       ocrStatus.textContent = 'Rendering PDF…';
@@ -3710,25 +3838,51 @@ async function gestisciFileOCR(file) {
       pagine = [await fileToDataUrl(file)];
     }
 
-    const testiPagina = [];
-    for (let p = 0; p < pagine.length; p++) {
-      const etichettaPag = pagine.length > 1 ? ` · pagina ${p + 1}/${pagine.length}` : '';
-      ocrStatus.textContent = 'Pre-processing immagine…' + etichettaPag;
-      const varianti = await preprocessReceiptImage(pagine[p]);
-      testiPagina.push(await ocrPaginaConRitentativi(varianti, etichettaPag));
+    const lettura = ultimaLettura = { ocr: null, ocrText: '', gemini: null, foto: null, ocrErrore: '', geminiErrore: '' };
+    const attiva = () => ultimaLettura === lettura;   // una nuova scansione invalida le vecchie
+
+    const pOcr = haOcr
+      ? ocrLocale(pagine).then(r => { lettura.ocr = r.parsed; lettura.ocrText = r.testo; if (attiva()) { ocrText = r.testo; aggiornaConfrontoIA(); } return r; })
+      : Promise.reject(new Error('Libreria OCR non caricata'));
+    const pGem = usaGemini
+      ? (ocrStatus.textContent = 'Analisi con Gemini…', analizzaConGemini(pagine).then(r => { lettura.gemini = r.lettura; lettura.foto = r.foto; return r; }))
+      : Promise.reject(new Error('off'));
+    pOcr.catch(e => { lettura.ocrErrore = e.message; });
+    pGem.catch(e => { lettura.geminiErrore = e.message; });
+
+    let parsed = null, fonte = 'ocr', avvisoIA = '';
+    if (usaGemini) {
+      const g = await pGem.then(r => r.lettura, e => { avvisoIA = 'Gemini non disponibile (' + e.message + '): uso l\'OCR locale.'; return null; });
+      if (g && !g.errori.length) {
+        parsed = { data: g.data, negozio: g.negozio, righe: g.righe, errori: [], avvisi: g.avvisi, totale: g.totale, totaleRiportato: g.totaleRiportato, righeDaVerificare: 0 };
+        fonte = 'gemini';
+      } else if (g) avvisoIA = 'Gemini non ha trovato prodotti: uso l\'OCR locale.';
+    }
+    if (!parsed) {
+      const r = await pOcr;      // se fallisce va al catch esterno con il motivo
+      parsed = r.parsed; fonte = 'ocr';
+      if (attiva()) ocrText = r.testo;
     }
 
-    // Le pagine si concatenano PRIMA del parsing: il TOTALE sta sull'ultima,
-    // le voci sulle precedenti, e i checkpoint di coerenza devono vederli insieme.
-    const testoCompleto = testiPagina.filter(Boolean).join('\n');
-    const parsed = parseScontrino(testoCompleto);
-
-    ocrText = testoCompleto;
     ocrTotaleRiportato = parsed.totaleRiportato;
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
     popolaPreviewDaParser(parsed);
+    if (fonte === 'gemini') {
+      const box = document.getElementById('ocr-alerts');
+      const d = document.createElement('div');
+      d.className = 'alert info'; d.style.marginBottom = '10px';
+      d.textContent = 'Scontrino letto da Gemini. L\'OCR locale gira in parallelo per il confronto.';
+      box.prepend(d);
+      aggiornaConfrontoIA();
+    } else if (avvisoIA) {
+      const box = document.getElementById('ocr-alerts');
+      const d = document.createElement('div');
+      d.className = 'alert warning'; d.style.marginBottom = '10px';
+      d.textContent = avvisoIA;
+      box.prepend(d);
+    }
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
 
@@ -3738,7 +3892,7 @@ async function gestisciFileOCR(file) {
     } else {
       const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
       const daVerificare = parsed.righeDaVerificare || 0;
-      let msg = `OCR completato: ${parsed.righe.length} voci estratte`;
+      let msg = `${fonte === 'gemini' ? 'Gemini' : 'OCR'} completato: ${parsed.righe.length} voci estratte`;
       if (conSconto) msg += `, ${conSconto} con sconto`;
       if (daVerificare) msg += `, ${daVerificare} da verificare`;
       toast(msg, daVerificare || parsed.avvisi.length ? 'warning' : 'success');
@@ -3750,8 +3904,8 @@ async function gestisciFileOCR(file) {
     ocrPreview.classList.add('active');
     // Anche in caso di eccezione l'utente vede il motivo nel riquadro, non
     // solo in un toast che scompare.
-    mostraEsitoOCR({ righe: [], errori: ['OCR fallito: ' + e.message], avvisi: [], totale: 0 });
-    toast('OCR fallito: ' + e.message, 'danger', 6000);
+    mostraEsitoOCR({ righe: [], errori: ['Lettura fallita: ' + e.message], avvisi: [], totale: 0 });
+    toast('Lettura fallita: ' + e.message, 'danger', 6000);
   }
 }
 
@@ -4811,7 +4965,7 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   }
   const righe = [];
   document.querySelectorAll('#scontrino-rows .scontrino-row').forEach(row => {
-    const prodotto = row.querySelector('.sr-prodotto').value.trim();
+    const prodotto = nomeProdottoPulito(row.querySelector('.sr-prodotto').value);
     const categoria = row.querySelector('.sr-categoria').value;
     const prezzo = parseFloat(row.querySelector('.sr-prezzo').value);
     if (prodotto && !isNaN(prezzo) && prezzo > 0) {
@@ -4845,7 +4999,8 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   }
 
   const scontrinoId = uid();
-  const origine = ocrText ? 'ocr' : 'manuale';
+  const origine = (ocrText || (ultimaLettura && ultimaLettura.gemini)) ? 'ocr' : 'manuale';
+  salvaCasoScontrino(righe, totale, negozio, data);
 
   stato.scontrini.push({ id: scontrinoId, data, negozio, localita, totale, origine });
   righe.forEach(r => {
@@ -4871,6 +5026,25 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   document.getElementById('btn-reset-scontrino').click();
   ocrPreview.classList.remove('active');
 });
+
+/** Salva il caso di prova (OCR locale vs Gemini vs correzione finale). Non blocca mai il salvataggio. */
+function salvaCasoScontrino(righe, totale, negozio, data) {
+  const L0 = ultimaLettura;
+  if (!L0 || (!L0.ocr && !L0.gemini) || !Archivio.ok) return;
+  const pulite = rs => rs.map(r => ({ prodotto: r.prodotto, categoria: r.categoria, prezzo: r.prezzo }));
+  const caso = {
+    id: uid(), creato: new Date().toISOString(), negozio, data,
+    ocrText: L0.ocrText || ocrText || '',
+    ocrRighe: L0.ocr ? pulite(L0.ocr.righe) : null, ocrTotale: L0.ocr ? L0.ocr.totale : null,
+    ocrTotaleRiportato: L0.ocr ? L0.ocr.totaleRiportato : null,
+    geminiRighe: L0.gemini ? pulite(L0.gemini.righe) : null, geminiTotale: L0.gemini ? L0.gemini.totale : null,
+    usoGemini: !!L0.gemini,
+    finaleRighe: pulite(righe), totaleFinale: totale,
+    foto: configIA().salvaFoto ? L0.foto : null
+  };
+  Archivio.salvaCaso(caso).catch(e => console.warn('caso di prova non salvato:', e));
+}
+document.getElementById('btn-reset-scontrino').addEventListener('click', () => { ultimaLettura = null; });
 
 /* ============================================================
    STORICO TRANSAZIONI
@@ -5018,7 +5192,50 @@ function exportaCSV() {
 let prodSort = { key: 'spesaTotale', dir: 'desc' };
 let chartPareto = null;
 
+/* ---------- Analisi "dove spendo" (righe prodotto del mese + mesi archiviati) ---------- */
+async function righeProdottoPeriodo(mesi) {
+  let righe = stato.righeProdotto.slice();
+  if (mesi !== 1) {
+    const tutti = Archivio.ok ? new Map((await Archivio.tutti()).map(r => [r.id, r])) : new Map();
+    let archiviati = stato.archivioMesi;
+    if (mesi > 1) archiviati = archiviati.slice(-(mesi - 1));
+    archiviati.forEach(a => {
+      const r = tutti.get(a.id);
+      righe = righe.concat((r && r.righeProdotto) || a.righeProdotto || []);
+    });
+  }
+  return righe;
+}
+async function renderAnalisiProdotti() {
+  const box = document.getElementById('analisi-corpo');
+  if (!box) return;
+  const mesi = Number(document.getElementById('analisi-periodo').value);
+  let righe;
+  try { righe = await righeProdottoPeriodo(mesi); } catch (e) { box.innerHTML = '<div class="empty-state">Lettura archivio non riuscita.</div>'; return; }
+  const a = aggregaProdotti(righe);
+  if (!a.perProdotto.length) {
+    box.innerHTML = '<div class="empty-state">Nessun prodotto nel periodo. Registra scontrini per popolare l\'analisi. I mesi chiusi prima di questa versione non hanno il dettaglio dei prodotti.</div>';
+    return;
+  }
+  const barre = (voci, nome, valore) => voci.slice(0, 8).map(v => {
+    const pct = a.totale > 0 ? Math.round(valore(v) / a.totale * 100) : 0;
+    return `<div style="margin-bottom:8px;"><div style="display:flex; justify-content:space-between; font-size:13px;"><span>${escapeHtml(nome(v))}</span><span class="num">${fmt(valore(v))} · ${pct}%</span></div>
+      <div style="height:6px; background:var(--bg-elev-2); border-radius:3px;"><div style="height:100%; width:${pct}%; background:var(--accent); border-radius:3px;"></div></div></div>`;
+  }).join('');
+  box.innerHTML = `
+    <p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Totale prodotti nel periodo: <strong class="num">${fmt(a.totale)}</strong> · ${a.perProdotto.length} prodotti diversi</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:var(--sp-lg);">
+      <div><div class="section-title" style="font-size:13px;">Per categoria</div>${barre(a.perCategoria, v => v.categoria, v => v.totale)}</div>
+      <div><div class="section-title" style="font-size:13px;">Per negozio</div>${barre(a.perNegozio, v => v.negozio, v => v.totale)}</div>
+      <div><div class="section-title" style="font-size:13px;">Dove costa meno</div>
+        ${a.risparmi.length ? a.risparmi.slice(0, 6).map(r => `<div style="font-size:13px; margin-bottom:6px;"><strong>${escapeHtml(r.prodotto)}</strong><br><span style="color:var(--text-muted);">${escapeHtml(r.negozioMin)} ${fmt(r.prezzoMin)} · ultimo acquisto ${escapeHtml(r.negozioUltimo)} ${fmt(r.prezzoUltimo)} <span style="color:var(--warning);">(+${fmt(r.delta)})</span></span></div>`).join('')
+          : '<div class="empty-state" style="padding:8px;">Servono acquisti dello stesso prodotto in negozi diversi.</div>'}</div>
+    </div>`;
+}
+document.getElementById('analisi-periodo').addEventListener('change', renderAnalisiProdotti);
+
 function renderProdotti() {
+  renderAnalisiProdotti();
   const cats = new Set();
   Object.values(stato.storicoProdotti).forEach(p => cats.add(p.categoria));
   const sel = document.getElementById('filtro-categoria');
@@ -5359,7 +5576,8 @@ function proceedChiusura(nuovoMese, nuovoReddito) {
     versatoSavings: sS,
     avanzoTotale: avanzoTot,
     movimenti: stato.movimenti.slice(),
-    scontrini: stato.scontrini.slice()
+    scontrini: stato.scontrini.slice(),
+    righeProdotto: stato.righeProdotto.slice()
   });
 
   // No roll-over: azzeramento completo
@@ -5489,6 +5707,7 @@ document.getElementById('recon-applica').addEventListener('click', () => {
    IMPOSTAZIONI
    ============================================================ */
 function renderImpostazioni() {
+  renderIA();
   document.getElementById('reddito-input').value = stato.reddito;
   document.getElementById('mese-input').value = stato.meseCorrente;
   document.getElementById('app-version-label').textContent = APP_VERSION;
@@ -5589,6 +5808,63 @@ function renderImpostazioni() {
   }));
 }
 
+/* ---------- Impostazioni IA e casi di prova ---------- */
+async function renderIA() {
+  const c = configIA();
+  document.getElementById('ia-attivo').checked = c.attivo;
+  document.getElementById('ia-chiave').value = c.chiave;
+  document.getElementById('ia-modello').value = c.modello;
+  document.getElementById('ia-foto').checked = c.salvaFoto;
+  const st = document.getElementById('ia-stato');
+  st.style.color = 'var(--text-muted)';
+  st.textContent = c.attivo ? (c.chiave ? 'Gemini attivo.' : 'Attivo ma manca la chiave: verrà usato solo l\'OCR locale.') : 'Gemini non attivo: si usa solo l\'OCR locale.';
+  const info = document.getElementById('ia-casi-info');
+  if (!Archivio.ok) { info.textContent = 'Archivio non disponibile su questo browser: i casi di prova non possono essere salvati.'; return; }
+  try {
+    const casi = await Archivio.tuttiCasi();
+    const stat = statisticheOcr(casi);
+    info.textContent = casi.length
+      ? `${casi.length} casi salvati. ` + (stat.n ? `OCR locale sugli ultimi ${stat.n}: ${Math.round(stat.accuratezza * 100)}% di righe corrette, totale giusto nel ${Math.round(stat.totaleOk * 100)}% dei casi.` : 'Nessun caso con OCR locale da confrontare.')
+      : 'Nessun caso ancora: si accumulano salvando scontrini.';
+  } catch (e) { info.textContent = 'Lettura casi non riuscita: ' + e.message; }
+}
+document.getElementById('btn-ia-salva').addEventListener('click', () => {
+  const ok = salvaConfigIA({
+    attivo: document.getElementById('ia-attivo').checked,
+    chiave: document.getElementById('ia-chiave').value.trim(),
+    modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT,
+    salvaFoto: document.getElementById('ia-foto').checked
+  });
+  toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
+  renderIA();
+});
+document.getElementById('btn-ia-test').addEventListener('click', async () => {
+  const st = document.getElementById('ia-stato');
+  const ia = { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
+  if (ia.chiave.length < 10) { st.style.color = 'var(--danger)'; st.textContent = 'Inserisci prima la chiave API.'; return; }
+  st.style.color = 'var(--text-muted)'; st.textContent = 'Provo la connessione…';
+  try {
+    await chiamaGemini({ contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { temperature: 0, maxOutputTokens: 8 } }, ia, 20000);
+    st.style.color = 'var(--success)'; st.textContent = 'Connessione riuscita: chiave e modello funzionano. Ricorda di premere Salva.';
+  } catch (e) { st.style.color = 'var(--danger)'; st.textContent = 'Non funziona: ' + e.message + '.'; }
+});
+document.getElementById('btn-casi-export').addEventListener('click', async () => {
+  if (!Archivio.ok) { toast('Archivio non disponibile.', 'warning'); return; }
+  try {
+    const conFoto = document.getElementById('casi-con-foto').checked;
+    const casi = (await Archivio.tuttiCasi()).map(c => conFoto ? c : { ...c, foto: null });
+    if (!casi.length) { toast('Nessun caso da esportare.', 'info'); return; }
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    scaricaFile(`casi_scontrini_${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}.json`, JSON.stringify({ versione: 1, esportato: d.toISOString(), casi }, null, 2), 'application/json');
+    toast(casi.length + ' casi esportati' + (conFoto ? ' (con foto)' : '') + '.', 'success');
+  } catch (e) { toast('Esportazione non riuscita: ' + e.message, 'danger'); }
+});
+document.getElementById('btn-casi-svuota').addEventListener('click', () => {
+  apriModal('Eliminare i casi di prova?', 'Si perdono le statistiche di accuratezza dell\'OCR e i dati per migliorarlo. Gli scontrini registrati non vengono toccati.', async () => {
+    try { await Archivio.svuotaCasi(); toast('Casi eliminati.', 'info'); renderIA(); } catch (e) { toast('Operazione non riuscita: ' + e.message, 'danger'); }
+  });
+});
+
 document.getElementById('btn-salva-generali').addEventListener('click', () => {
   const r = parseFloat(document.getElementById('reddito-input').value);
   const m = document.getElementById('mese-input').value.trim();
@@ -5687,7 +5963,7 @@ document.getElementById('btn-reset-tutto').addEventListener('click', () => {
     'Reset totale?',
     'Cancella tutti i dati e riporta lo stato iniziale. Esporta un backup prima di procedere.',
     async () => {
-      if (Archivio.ok) { try { await Archivio.svuota(); } catch (e) { console.warn(e); } }
+      if (Archivio.ok) { try { await Archivio.svuota(); await Archivio.svuotaCasi(); } catch (e) { console.warn(e); } }
       stato = JSON.parse(JSON.stringify(STATO_DEFAULT));
       salvaStato();
       renderImpostazioni();

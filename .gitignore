@@ -10,6 +10,7 @@ credentials/
 # Export/backup dati personali (vedi SETUP.md: dati_DD-MM-YYYY_HH-MM.json)
 dati_*.json
 backup_*.json
+casi_scontrini_*.json
 
 # Editor/IDE
 .vscode/

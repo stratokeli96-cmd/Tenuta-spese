@@ -308,3 +308,103 @@ test('validaStato: regoleBanca ripulite (niente __proto__), origine banca e rif 
   assert.equal(ok.movimenti[0].origine, 'banca');
   assert.equal(ok.movimenti[0].rif, 'r1');
 });
+
+/* ---------------- Scontrini: Gemini, confronto OCR, analisi prodotti ---------------- */
+const CATS = ['Ortofrutta', 'Latticini e Uova', 'Altro'];
+
+test('costruisciRichiestaGemini: immagini, schema, categorie nel prompt e nell\'enum', () => {
+  const r = L.costruisciRichiestaGemini([{ mime: 'image/jpeg', base64: 'AAA' }, { mime: 'image/jpeg', base64: 'BBB' }], CATS);
+  const parts = r.contents[0].parts;
+  assert.equal(parts.length, 3);
+  assert.match(parts[0].text, /Ortofrutta, Latticini e Uova, Altro/);
+  assert.deepEqual(parts[1], { inline_data: { mime_type: 'image/jpeg', data: 'AAA' } });
+  assert.equal(r.generationConfig.responseMimeType, 'application/json');
+  assert.deepEqual(r.generationConfig.responseSchema.properties.righe.items.properties.categoria.enum, CATS);
+  assert.equal(r.generationConfig.temperature, 0);
+});
+
+test('normalizzaRispostaGemini: righe valide, categoria ignota -> Altro, scarti e avvisi', () => {
+  const raw = '```json\n' + JSON.stringify({ negozio: 'Penny', data: '03/11/2026', totale: 10.5, righe: [
+    { prodotto: ' Mele  Golden ', categoria: 'Ortofrutta', prezzo: 2.5 },
+    { prodotto: 'Latte', categoria: 'Boh', prezzo: '1,49' },
+    { prodotto: 'Sconto', categoria: 'Altro', prezzo: -0.5 },
+    { prodotto: '', prezzo: 3 }, 'x'
+  ] }) + '\n```';
+  const r = L.normalizzaRispostaGemini(raw, CATS);
+  assert.equal(r.data, '2026-11-03');
+  assert.deepEqual(r.righe.map(x => [x.prodotto, x.categoria, x.prezzo]), [['Mele Golden', 'Ortofrutta', 2.5], ['Latte', 'Altro', 1.49]]);
+  assert.equal(r.totale, 3.99);
+  assert.equal(r.totaleRiportato, 10.5);
+  assert.equal(r.avvisi.length, 2);                  // 3 scartate + totale che non torna
+  assert.equal(r.errori.length, 0);
+});
+
+test('normalizzaRispostaGemini: input non valido -> errori, mai eccezioni', () => {
+  assert.equal(L.normalizzaRispostaGemini('non json', CATS).errori.length, 1);
+  assert.equal(L.normalizzaRispostaGemini(null, CATS).errori.length, 1);
+  assert.equal(L.normalizzaRispostaGemini({ righe: [] }, CATS).errori.length, 1);
+  assert.equal(L.normalizzaRispostaGemini({ righe: [{ prodotto: 'a', prezzo: 1 }], totale: 1 }, CATS).avvisi.length, 0);
+});
+
+test('confrontaLetture: prezzi uguali + nome compatibile, ogni riga usata una sola volta', () => {
+  const rif = [{ prodotto: 'Latte parzialmente scremato', prezzo: 1.49 }, { prodotto: 'Mele', prezzo: 2.5 }, { prodotto: 'Pane', prezzo: 1 }];
+  const ocr = [{ prodotto: 'LATTE PARZ SCREM', prezzo: 1.49 }, { prodotto: 'MELE GOLD', prezzo: 2.5 }, { prodotto: 'XQZ', prezzo: 1.0 }, { prodotto: 'extra', prezzo: 9 }];
+  const r = L.confrontaLetture(ocr, rif);
+  assert.equal(r.righeUguali, 2);                    // "XQZ" ha il prezzo giusto ma nome diverso
+  assert.equal(r.accuratezza, 0.5);                  // 2 su max(4,3)
+  assert.equal(L.confrontaLetture([], []).accuratezza, 1);
+  assert.equal(L.confrontaLetture([{ prodotto: 'a', prezzo: 1 }], [{ prodotto: 'a', prezzo: 1 }, { prodotto: 'a', prezzo: 1 }]).righeUguali, 1);
+});
+
+test('statisticheOcr: ultimi n casi, totale corretto', () => {
+  const casi = [
+    { creato: '2026-01-01', ocrRighe: [{ prodotto: 'a', prezzo: 1 }], finaleRighe: [{ prodotto: 'a', prezzo: 1 }], ocrTotale: 1, totaleFinale: 1 },
+    { creato: '2026-01-02', ocrRighe: [{ prodotto: 'b', prezzo: 5 }], finaleRighe: [{ prodotto: 'b', prezzo: 2 }], ocrTotale: 5, totaleFinale: 2 },
+    { creato: '2026-01-03', ocrRighe: null, finaleRighe: [{ prodotto: 'c', prezzo: 1 }] }   // solo Gemini: non conta
+  ];
+  const s = L.statisticheOcr(casi);
+  assert.equal(s.n, 2); assert.equal(s.accuratezza, 0.5); assert.equal(s.totaleOk, 0.5);
+  assert.equal(L.statisticheOcr(casi, 1).n, 1);
+  assert.equal(L.statisticheOcr([]).accuratezza, null);
+});
+
+test('aggregaProdotti: categorie, negozi, nome pulito, dove costa meno', () => {
+  const righe = [
+    { prodotto: 'Latte (lordo 1,80 € − sconto 0,31 €)', categoria: 'Latticini e Uova', prezzo: 1.49, negozio: 'Penny', data: '2026-11-01' },
+    { prodotto: 'LATTE', categoria: 'Latticini e Uova', prezzo: 1.29, negozio: 'Lidl', data: '2026-11-02' },
+    { prodotto: 'Latte', categoria: 'Latticini e Uova', prezzo: 1.59, negozio: 'Penny', data: '2026-11-05' },
+    { prodotto: 'Mele', categoria: 'Ortofrutta', prezzo: 2, negozio: 'Penny', data: '2026-11-05' },
+    { prodotto: 'x', prezzo: 0, negozio: 'Penny' }
+  ];
+  const a = L.aggregaProdotti(righe);
+  assert.equal(a.totale, 6.37);
+  assert.deepEqual(a.perCategoria.map(c => [c.categoria, c.totale, c.n]), [['Latticini e Uova', 4.37, 3], ['Ortofrutta', 2, 1]]);
+  assert.deepEqual(a.perNegozio.map(n => [n.negozio, n.totale]), [['Penny', 5.08], ['Lidl', 1.29]]);
+  const latte = a.perProdotto.find(p => p.chiave === 'latte');
+  assert.equal(latte.n, 3); assert.equal(latte.min, 1.29); assert.equal(latte.ultimo, 1.59); assert.equal(latte.ultimoNegozio, 'Penny');
+  assert.deepEqual(a.risparmi.map(r => [r.prodotto, r.negozioMin, r.delta]), [['Latte', 'Lidl', 0.3]]);
+  assert.equal(L.nomeProdottoPulito('Pane  (lordo 2,00 € − sconto 0,50 €)'), 'Pane');
+});
+
+test('aggregaProdotti non si rompe con negozio "__proto__"', () => {
+  const a = L.aggregaProdotti([{ prodotto: 'a', categoria: 'x', prezzo: 1, negozio: '__proto__', data: '2026-01-01' }]);
+  assert.equal(a.perProdotto[0].n, 1);
+  assert.equal(Object.getPrototypeOf(a.perProdotto[0].negozi), Object.prototype);
+});
+
+test('archivio: le righe prodotto del mese seguono il dettaglio (separa/ricompone)', () => {
+  const st = stato({ archivioMesi: [{ id: 'm1', mese: 'Gen', movimenti: [], scontrini: [], righeProdotto: [{ id: 'r', prodotto: 'Latte', prezzo: 1 }] }] });
+  const { leggero, dettagli } = L.separaArchivio(st);
+  assert.equal(dettagli.length, 1);
+  assert.equal(leggero.archivioMesi[0].righeProdotto, undefined);
+  assert.equal(leggero.archivioMesi[0].nRighe, 1);
+  assert.deepEqual(L.ricomponiArchivio(leggero, dettagli).archivioMesi[0].righeProdotto, [{ id: 'r', prodotto: 'Latte', prezzo: 1 }]);
+});
+
+test('messaggioErroreGemini: messaggi chiari per i casi comuni', () => {
+  assert.match(L.messaggioErroreGemini(400, 'API key not valid. Please pass a valid API key.'), /chiave API non valida/);
+  assert.match(L.messaggioErroreGemini(404, ''), /modello non trovato/);
+  assert.match(L.messaggioErroreGemini(429, ''), /quota/);
+  assert.match(L.messaggioErroreGemini(503, ''), /non disponibile/);
+  assert.match(L.messaggioErroreGemini(418, ''), /418/);
+});

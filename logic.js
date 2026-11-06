@@ -271,7 +271,7 @@ function validaStato(input) {
     mese: _str(a.mese),
     reddito: _num(a.reddito), spesoNeeds: _num(a.spesoNeeds), spesoWants: _num(a.spesoWants),
     versatoSavings: _num(a.versatoSavings), avanzoTotale: _num(a.avanzoTotale),
-    movimenti: _arrObj(a.movimenti), scontrini: _arrObj(a.scontrini)
+    movimenti: _arrObj(a.movimenti), scontrini: _arrObj(a.scontrini), righeProdotto: _arrObj(a.righeProdotto)
   }));
 
   const sr = (d.saldoRiportato && typeof d.saldoRiportato === 'object') ? d.saldoRiportato : {};
@@ -287,9 +287,10 @@ function validaStato(input) {
    ============================================================ */
 /** Copia leggera di un mese archiviato (senza movimenti/scontrini). */
 function meseLeggero(a) {
-  const { movimenti, scontrini, compattato, ...resto } = a;
+  const { movimenti, scontrini, righeProdotto, compattato, ...resto } = a;
   return {
     ...resto,
+    nRighe: (Array.isArray(righeProdotto) && righeProdotto.length) || a.nRighe || 0,
     nMovimenti: (Array.isArray(movimenti) && movimenti.length) || a.nMovimenti || 0,
     nScontrini: (Array.isArray(scontrini) && scontrini.length) || a.nScontrini || 0
   };
@@ -298,8 +299,8 @@ function meseLeggero(a) {
 function separaArchivio(st) {
   const dettagli = [];
   const leggero = { ...st, archivioMesi: st.archivioMesi.map(a => {
-    const haDettaglio = (a.movimenti && a.movimenti.length) || (a.scontrini && a.scontrini.length);
-    if (haDettaglio) dettagli.push({ ...a, movimenti: a.movimenti || [], scontrini: a.scontrini || [] });
+    const haDettaglio = (a.movimenti && a.movimenti.length) || (a.scontrini && a.scontrini.length) || (a.righeProdotto && a.righeProdotto.length);
+    if (haDettaglio) dettagli.push({ ...a, movimenti: a.movimenti || [], scontrini: a.scontrini || [], righeProdotto: a.righeProdotto || [] });
     return meseLeggero(a);
   }) };
   return { leggero, dettagli };
@@ -309,8 +310,9 @@ function ricomponiArchivio(stLeggero, dettagli) {
   const perId = new Map((dettagli || []).map(r => [r.id, r]));
   return { ...stLeggero, archivioMesi: stLeggero.archivioMesi.map(a => {
     const r = perId.get(a.id);
-    const { nMovimenti, nScontrini, ...base } = a;
-    return { ...base, movimenti: r ? r.movimenti : (a.movimenti || []), scontrini: r ? r.scontrini : (a.scontrini || []) };
+    const { nMovimenti, nScontrini, nRighe, ...base } = a;
+    return { ...base, movimenti: r ? r.movimenti : (a.movimenti || []), scontrini: r ? r.scontrini : (a.scontrini || []),
+      righeProdotto: r ? (r.righeProdotto || []) : (a.righeProdotto || []) };
   }) };
 }
 /** Reddito totale di un mese archiviato (base + entrate extra). */
@@ -543,6 +545,150 @@ function indovinaVoce(desc, st) {
   return null;
 }
 
+/* ============================================================
+   SCONTRINI: lettura con Gemini, confronto con l'OCR locale, analisi prodotti
+   ============================================================ */
+const CATEGORIA_FALLBACK = 'Altro';
+
+/** Corpo della richiesta a Gemini (generateContent) per leggere uno scontrino da una o più immagini. */
+function costruisciRichiestaGemini(immagini, categorie) {
+  const prompt = [
+    'Sei un lettore esperto di scontrini fiscali italiani. Leggi l\'immagine (o le immagini: sono pagine dello STESSO scontrino) e restituisci SOLO JSON.',
+    'Regole:',
+    '- "totale" è il TOTALE COMPLESSIVO stampato sullo scontrino (importo pagato), non la somma delle righe.',
+    '- Una riga per ogni prodotto acquistato. "prezzo" è l\'importo FINALE pagato per quella riga (quantità incluse, sconti già applicati).',
+    '- Gli sconti vanno applicati al prodotto a cui si riferiscono: NON restituire righe con importo negativo o a zero.',
+    '- Ignora intestazione, P.IVA, IVA, resto, metodo di pagamento, punti fedeltà.',
+    '- "prodotto": nome leggibile e normalizzato in italiano (espandi le abbreviazioni ovvie, niente codici).',
+    '- "categoria": scegli ESATTAMENTE una tra: ' + categorie.join(', ') + '.',
+    '- "data" nel formato YYYY-MM-DD. Se un dato non è leggibile lascia stringa vuota o ometti il campo; non inventare.',
+    '- Prezzi come numeri con il punto decimale.'
+  ].join('\n');
+  const T = { OBJECT: 'OBJECT', STRING: 'STRING', NUMBER: 'NUMBER', ARRAY: 'ARRAY' };
+  return {
+    contents: [{ role: 'user', parts: [{ text: prompt }, ...immagini.map(i => ({ inline_data: { mime_type: i.mime, data: i.base64 } }))] }],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: T.OBJECT,
+        properties: {
+          negozio: { type: T.STRING }, localita: { type: T.STRING }, data: { type: T.STRING }, totale: { type: T.NUMBER },
+          righe: { type: T.ARRAY, items: { type: T.OBJECT, properties: {
+            prodotto: { type: T.STRING }, categoria: { type: T.STRING, enum: categorie }, prezzo: { type: T.NUMBER }
+          }, required: ['prodotto', 'prezzo'] } }
+        },
+        required: ['righe']
+      }
+    }
+  };
+}
+
+/** Risposta di Gemini (oggetto o testo JSON, anche con ```fence```) -> lettura validata dello scontrino. */
+function normalizzaRispostaGemini(raw, categorie) {
+  const out = { negozio: '', localita: '', data: '', righe: [], totale: 0, totaleRiportato: null, avvisi: [], errori: [] };
+  let o = raw;
+  if (typeof raw === 'string') {
+    const t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    try { o = JSON.parse(t); } catch (_) { out.errori.push('Risposta di Gemini non leggibile (JSON non valido).'); return out; }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) { out.errori.push('Risposta di Gemini non valida.'); return out; }
+  out.negozio = _str(o.negozio).trim().slice(0, 80);
+  out.localita = _str(o.localita).trim().slice(0, 80);
+  out.data = parseDataBanca(o.data);
+  const cat = c => categorie.includes(c) ? c : (categorie.includes(CATEGORIA_FALLBACK) ? CATEGORIA_FALLBACK : categorie[0]);
+  let scartate = 0;
+  (Array.isArray(o.righe) ? o.righe : []).forEach(r => {
+    if (!r || typeof r !== 'object') { scartate++; return; }
+    const prodotto = _str(r.prodotto).replace(/\s+/g, ' ').trim().slice(0, 80);
+    const prezzo = round2(parseImportoBanca(r.prezzo));
+    if (!prodotto || !Number.isFinite(prezzo) || prezzo <= 0) { scartate++; return; }
+    out.righe.push({ prodotto, categoria: cat(_str(r.categoria)), prezzo });
+  });
+  out.totale = round2(out.righe.reduce((a, r) => a + r.prezzo, 0));
+  const tr = parseImportoBanca(o.totale);
+  out.totaleRiportato = Number.isFinite(tr) && tr > 0 ? round2(tr) : null;
+  if (!out.righe.length) out.errori.push('Gemini non ha trovato prodotti nello scontrino.');
+  if (scartate) out.avvisi.push(scartate + ' righe scartate (importo non valido o nome mancante).');
+  if (out.totaleRiportato !== null && Math.abs(out.totale - out.totaleRiportato) > 0.01) {
+    out.avvisi.push('La somma delle righe (' + out.totale.toFixed(2) + ' €) non coincide col totale letto (' + out.totaleRiportato.toFixed(2) + ' €).');
+  }
+  return out;
+}
+
+/** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). */
+function messaggioErroreGemini(status, dettaglio) {
+  const d = String(dettaglio || '').slice(0, 160);
+  if (status === 400 && /api key|api_key/i.test(d)) return 'chiave API non valida: controllala in Impostazioni';
+  if (status === 400) return 'richiesta rifiutata da Gemini' + (d ? ' (' + d + ')' : '');
+  if (status === 401 || status === 403) return 'chiave API non autorizzata o non abilitata per questo modello';
+  if (status === 404) return 'modello non trovato: controlla il nome del modello in Impostazioni';
+  if (status === 429) return 'quota gratuita esaurita o troppe richieste: riprova tra poco';
+  if (status >= 500) return 'servizio Gemini temporaneamente non disponibile';
+  return 'errore Gemini ' + status;
+}
+function _tokenNome(s) { return normTesto(s).split(' ').filter(Boolean); }
+/**
+ * Quanto la lettura `letta` coincide con il riferimento `rif` (entrambe: [{prodotto, prezzo}]).
+ * Una riga coincide se il prezzo è uguale e i nomi hanno almeno una parola con le stesse prime 3 lettere.
+ */
+function confrontaLetture(letta, rif) {
+  const usate = new Set(); let uguali = 0;
+  rif.forEach(r => {
+    const tr = _tokenNome(r.prodotto);
+    for (let i = 0; i < letta.length; i++) {
+      if (usate.has(i) || Math.abs(round2(letta[i].prezzo) - round2(r.prezzo)) > 0.005) continue;
+      const tl = _tokenNome(letta[i].prodotto);
+      const nomeOk = !tr.length || !tl.length || tr.some(a => tl.some(b => a.slice(0, 3) === b.slice(0, 3)));
+      if (nomeOk) { usate.add(i); uguali++; break; }
+    }
+  });
+  const tot = Math.max(letta.length, rif.length);
+  return { righeRif: rif.length, righeLette: letta.length, righeUguali: uguali, accuratezza: tot ? uguali / tot : 1 };
+}
+/** Accuratezza media dell'OCR locale sugli ultimi `n` casi (con lettura OCR e riferimento finale). */
+function statisticheOcr(casi, n = 20) {
+  const validi = casi.filter(c => Array.isArray(c.ocrRighe) && Array.isArray(c.finaleRighe) && c.finaleRighe.length)
+    .sort((a, b) => String(a.creato).localeCompare(String(b.creato))).slice(-n);
+  if (!validi.length) return { n: 0, accuratezza: null, totaleOk: null };
+  const acc = validi.map(c => confrontaLetture(c.ocrRighe, c.finaleRighe).accuratezza);
+  const totOk = validi.filter(c => Number.isFinite(c.ocrTotale) && Math.abs(c.ocrTotale - c.totaleFinale) <= 0.01).length;
+  return { n: validi.length, accuratezza: acc.reduce((a, b) => a + b, 0) / acc.length, totaleOk: totOk / validi.length };
+}
+
+/** Nome prodotto senza il suffisso "(lordo X − sconto Y)" che l'anteprima aggiunge. */
+function nomeProdottoPulito(s) { return String(s ?? '').replace(/\s*\(lordo [^)]*\)\s*$/i, '').replace(/\s+/g, ' ').trim(); }
+
+/** Aggrega righe prodotto [{prodotto, categoria, prezzo, negozio, data}] per categoria, negozio e prodotto. */
+function aggregaProdotti(righe) {
+  const cat = new Map(), neg = new Map(), prod = new Map();
+  righe.forEach(r => {
+    const prezzo = round2(_num(r.prezzo)); if (prezzo <= 0) return;
+    const nome = nomeProdottoPulito(r.prodotto), chiave = normTesto(nome) || nome.toLowerCase();
+    const negozio = _str(r.negozio).trim() || '—', categoria = _str(r.categoria, 'Altro') || 'Altro';
+    const c = cat.get(categoria) || { categoria, totale: 0, n: 0 }; c.totale = round2(c.totale + prezzo); c.n++; cat.set(categoria, c);
+    const n = neg.get(negozio) || { negozio, totale: 0, n: 0 }; n.totale = round2(n.totale + prezzo); n.n++; neg.set(negozio, n);
+    const p = prod.get(chiave) || { chiave, prodotto: nome, categoria, n: 0, totale: 0, min: Infinity, max: 0, ultimo: 0, ultimaData: '', ultimoNegozio: '', negozi: {} };
+    p.n++; p.totale = round2(p.totale + prezzo); p.min = Math.min(p.min, prezzo); p.max = Math.max(p.max, prezzo);
+    if (String(r.data) >= p.ultimaData) { p.ultimaData = String(r.data); p.ultimo = prezzo; p.ultimoNegozio = negozio; }
+    const pn = Object.prototype.hasOwnProperty.call(p.negozi, negozio) ? p.negozi[negozio] : { min: Infinity, n: 0 };
+    pn.min = Math.min(pn.min, prezzo); pn.n++;
+    Object.defineProperty(p.negozi, negozio, { value: pn, enumerable: true, writable: true, configurable: true });
+    prod.set(chiave, p);
+  });
+  const perProdotto = [...prod.values()].sort((a, b) => b.totale - a.totale);
+  const risparmi = perProdotto.filter(p => Object.keys(p.negozi).length >= 2).map(p => {
+    const [nMin, vMin] = Object.entries(p.negozi).sort((a, b) => a[1].min - b[1].min)[0];
+    return { prodotto: p.prodotto, negozioMin: nMin, prezzoMin: vMin.min, negozioUltimo: p.ultimoNegozio, prezzoUltimo: p.ultimo, delta: round2(p.ultimo - vMin.min) };
+  }).filter(x => x.delta > 0.01 && x.negozioMin !== x.negozioUltimo).sort((a, b) => b.delta - a.delta);
+  return {
+    perCategoria: [...cat.values()].sort((a, b) => b.totale - a.totale),
+    perNegozio: [...neg.values()].sort((a, b) => b.totale - a.totale),
+    perProdotto, risparmi,
+    totale: round2([...cat.values()].reduce((a, c) => a + c.totale, 0))
+  };
+}
+
 /** Importa un oggetto qualunque (nuovo o vecchio schema) e restituisce uno stato valido. */
 function importaStato(dati) {
   return validaStato(rilevaVecchioSchema(dati) ? migraDaVecchioSchema(dati) : dati);
@@ -584,6 +730,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
