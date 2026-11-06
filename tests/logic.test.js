@@ -419,3 +419,8 @@ test('scegliModelloGemini: alias latest, flash stabile più recente, esclusioni'
   assert.equal(L.scegliModelloGemini([]), null);
   assert.equal(L.scegliModelloGemini(null), null);
 });
+
+test('messaggioErroreGemini: il 404 riporta il dettaglio di Google (senza la chiave)', () => {
+  const m = L.messaggioErroreGemini(404, 'models/gemini-x is not found for API version v1beta');
+  assert.match(m, /modello non trovato \(models\/gemini-x is not found/);
+});

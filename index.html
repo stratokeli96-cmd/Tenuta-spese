@@ -2352,8 +2352,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06g';
-const APP_BUILD_NOTE = 'Gemini: ricerca automatica del modello valido (se il nome non esiste più); grafica mobile, analisi prodotti, import banca';
+const APP_VERSION = '2026.11.06h';
+const APP_BUILD_NOTE = 'Gemini: prova di connessione corretta per i modelli che ragionano, errori più dettagliati; ricerca automatica del modello';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3855,7 +3855,12 @@ async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
     }
     const j = await res.json();
     const testo = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    if (!testo) throw new Error(j.promptFeedback?.blockReason ? 'richiesta bloccata da Gemini (' + j.promptFeedback.blockReason + ')' : 'risposta vuota da Gemini');
+    if (!testo) {
+      const motivo = j.promptFeedback?.blockReason || j.candidates?.[0]?.finishReason || '';
+      const err = new Error(j.promptFeedback?.blockReason ? 'richiesta bloccata da Gemini (' + motivo + ')' : 'risposta vuota da Gemini' + (motivo ? ' (motivo: ' + motivo + ')' : ''));
+      err.rispostaVuota = true;
+      throw err;
+    }
     return testo;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('Gemini non ha risposto in tempo');
@@ -5970,14 +5975,19 @@ function mostraStatoIA(testo, colore) { const st = document.getElementById('ia-s
 function iaDaCampi() {
   return { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
 }
-const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { temperature: 0, maxOutputTokens: 8 } };
+/** La richiesta di prova riesce se Google risponde 200: anche un testo vuoto (modelli che "ragionano") prova che chiave e modello funzionano. */
+async function provaGemini(ia) {
+  try { await chiamaGemini(PROVA_GEMINI, ia, 30000); }
+  catch (e) { if (!e.rispostaVuota || /bloccata/.test(e.message)) throw e; }
+}
+const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { maxOutputTokens: 1024 } };
 
 document.getElementById('btn-ia-test').addEventListener('click', async () => {
   let ia = iaDaCampi();
   if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
   mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
   try {
-    try { await chiamaGemini(PROVA_GEMINI, ia, 20000); }
+    try { await provaGemini(ia); }
     catch (e) {
       if (e.status !== 404) throw e;
       // Il modello indicato non esiste (più): chiedo a Google quale usare con questa chiave.
@@ -5987,11 +5997,11 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
       if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
       ia = { ...ia, modello: nuovo };
       document.getElementById('ia-modello').value = nuovo;
-      await chiamaGemini(PROVA_GEMINI, ia, 20000);
+      await provaGemini(ia);
     }
     document.getElementById('ia-modello').value = ia.modello;
     mostraStatoIA('Connessione riuscita con il modello "' + ia.modello + '". Premi Salva per tenerlo.', 'var(--success)');
-  } catch (e) { mostraStatoIA('Non funziona: ' + e.message + '.', 'var(--danger)'); }
+  } catch (e) { mostraStatoIA('Non funziona con il modello "' + ia.modello + '": ' + e.message + '.', 'var(--danger)'); }
 });
 document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
   const ia = iaDaCampi();
