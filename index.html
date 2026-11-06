@@ -25,6 +25,8 @@
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js" integrity="sha384-Ptw8HCYAWF6vIop6WuGxfSCiDCIzUWqjrHYfx8Vd0S4CMBaicAdBh2y+Ufle664A" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script src="logic.js"></script>
+<script src="archivio.js"></script>
+<script src="xlsx.js"></script>
 
 <style>
 /* ============================================================
@@ -818,6 +820,8 @@ body.drawer-open { overflow: hidden; overscroll-behavior: none; }
   text-transform: uppercase;
 }
 .badge.ocr    { background: #38bdf822; color: #b5c7d8; border: 1px solid #38bdf855; }
+.banca-dop td { opacity: .6; }
+.banca-dop td:first-child { opacity: 1; }
 .badge.manual { background: var(--bg-elev-2); color: var(--text-muted); border: 1px solid var(--border-soft); }
 .badge.needs   { background: #67e8f922; color: var(--needs); border: 1px solid #67e8f955; }
 .badge.wants   { background: #3b82f622; color: var(--wants); border: 1px solid #3b82f655; }
@@ -1540,6 +1544,75 @@ html, body { overflow-x: hidden; }
 /* contenitori con griglie a larghezza fissa: consenti lo scroll interno
    invece di rompere il layout della pagina */
 .tx-list, .heatmap, .scontrino-table { overflow-x: auto; }
+
+/* ============================================================
+   MOBILE & ACCESSIBILITÀ (revisione grafica)
+   ============================================================ */
+.amount-cell, .num { white-space: nowrap; }
+.btn { white-space: nowrap; }
+.page-header { flex-wrap: wrap; }
+.extra-riga { display:grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items:center; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+.extra-riga:last-child { border-bottom: 0; }
+.extra-riga .e-data { color: var(--text-dim); font-size: 12px; }
+.extra-riga .e-desc { min-width: 0; overflow-wrap: anywhere; }
+.extra-riga .e-sub { color: var(--text-dim); font-size: 11px; }
+.extra-riga .e-imp { font-family: var(--font-mono); font-weight: 600; white-space: nowrap; }
+.extra-riga .e-azioni { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+@media (max-width: 640px) {
+  /* iOS ingrandisce la pagina quando un campo con testo < 16px prende il focus (ora lo zoom è consentito) */
+  input, select, textarea { font-size: 16px; min-height: 44px; }
+  input[type="checkbox"], input[type="radio"] { min-height: 0; width: 20px; height: 20px; }
+  .btn, .btn-icon-danger, .tabbar-item { min-height: 44px; }
+  .btn-icon-danger { padding: 10px 14px; }
+
+  /* filtri: due colonne invece di una pila altissima */
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .toolbar .form-group { flex: none !important; min-width: 0; }
+  .toolbar .form-group:has(#filtro-testo), .toolbar .form-group:has(#cerca-prodotto) { grid-column: 1 / -1; }
+  .toolbar > div[style*="align-self"] { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+  .toolbar > div[style*="align-self"] .btn { flex: 1 1 auto; }
+
+  /* editor voci: il nome prende lo spazio, budget ed elimina restano accanto */
+  .voci-list .form-row { grid-template-columns: 1fr 96px 44px !important; }
+  /* preview ricalibrazione e confronto: niente sforamento orizzontale */
+  #recalibra-preview div[style*="grid"] { gap: 8px !important; }
+  #recalibra-preview div[style*="grid"] > div { min-width: 0; padding: 8px !important; }
+  #recalibra-preview .num { font-size: 14px !important; }
+  table.compatta { font-size: 12px; }
+  table.compatta thead th, table.compatta tbody td { padding: 8px 6px; }
+  table.compatta tbody td:last-child { white-space: normal; }
+
+  /* tabelle "a schede": una scheda per riga, etichetta + valore */
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack thead { display: none; }
+  table.stack tbody tr { background: var(--bg-elev-2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); margin-bottom: 10px; padding: 6px 12px; }
+  table.stack tbody td { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border: 0; text-align: right; }
+  table.stack tbody td::before { content: attr(data-label); color: var(--text-dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; text-align: left; flex: 0 0 auto; padding-top: 2px; }
+  table.stack tbody td.empty-state { display: block; text-align: center; }
+  table.stack tbody td.empty-state::before { content: none; }
+
+  /* storico transazioni: scheda compatta (voce + importo / descrizione / data, macro, origine, azione) */
+  table.tx-cards, table.tx-cards tbody, table.tx-cards tr, table.tx-cards td { display: block; width: 100%; }
+  table.tx-cards thead { display: none; }
+  table.tx-cards tbody tr { display: grid; grid-template-columns: auto auto auto 1fr auto; grid-template-areas: "voce voce voce voce imp" "desc desc desc desc desc" "data macro orig . act"; gap: 4px 10px; align-items: center; padding: 12px; margin-bottom: 8px; background: var(--bg-elev-2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+  table.tx-cards tbody td { padding: 0; border: 0; width: auto; }
+  table.tx-cards td.c-voce { grid-area: voce; font-weight: 600; }
+  table.tx-cards td.c-imp { grid-area: imp; font-size: 15px; text-align: right; }
+  table.tx-cards td.c-desc { grid-area: desc; color: var(--text-muted); overflow-wrap: anywhere; }
+  table.tx-cards td.c-desc:empty { display: none; }
+  table.tx-cards td.c-data { grid-area: data; color: var(--text-dim); font-size: 12px; }
+  table.tx-cards td.c-macro { grid-area: macro; }
+  table.tx-cards td.c-orig { grid-area: orig; }
+  table.tx-cards td.c-act { grid-area: act; text-align: right; }
+  table.tx-cards tbody tr:hover { background: var(--bg-elev-2); }
+  table.tx-cards tbody td.empty-state { grid-column: 1 / -1; width: 100%; text-align: center; }
+}
+}
 </style>
 </head>
 <body>
@@ -1648,6 +1721,13 @@ html, body { overflow-x: hidden; }
       <!-- Macros overview -->
       <div class="macros-row" id="macros-row"></div>
 
+      <!-- Entrate extra -->
+      <div class="widget" id="widget-extra" style="margin-bottom: var(--sp-lg);">
+        <div class="section-title">Entrate extra <span class="section-meta" id="extra-meta"></span></div>
+        <div id="extra-lista"></div>
+        <button class="btn btn-secondary" id="btn-extra-add" style="margin-top: 8px;">+ Entrata extra</button>
+      </div>
+
       <!-- Bento charts -->
       <div class="bento">
         <div class="widget col-7">
@@ -1742,7 +1822,8 @@ html, body { overflow-x: hidden; }
           </div>
 
           <!-- Esito dei checkpoint di validazione: errori bloccanti e avvisi. -->
-          <div id="ocr-alerts"></div>
+          <div id="ocr-confronto"></div>
+        <div id="ocr-alerts"></div>
 
           <!-- Fallback: testo grezzo riconosciuto, per inserimento manuale
                quando il parsing non riesce a strutturare le voci. -->
@@ -1825,13 +1906,14 @@ html, body { overflow-x: hidden; }
             <input type="text" id="filtro-testo" placeholder="..." />
           </div>
           <div style="display: flex; gap: 8px; align-self: flex-end;">
+            <button class="btn btn-secondary" id="btn-import-banca">Importa estratto conto</button>
             <button class="btn btn-ghost" id="btn-export-csv">CSV</button>
             <button class="btn btn-ghost" id="btn-export-json">JSON</button>
           </div>
         </div>
 
         <div class="table-wrap">
-          <table class="data" id="tabella-tx">
+          <table class="data tx-cards" id="tabella-tx">
             <thead>
               <tr>
                 <th>Data</th>
@@ -1858,6 +1940,15 @@ html, body { overflow-x: hidden; }
         </div>
       </div>
 
+      <div class="widget" style="margin-bottom: var(--sp-lg);" id="widget-analisi-prodotti">
+        <div class="section-title">Dove spendo
+          <span class="section-meta"><select id="analisi-periodo" style="padding:4px 8px;">
+            <option value="1">Mese corrente</option><option value="3">Ultimi 3 mesi</option><option value="6">Ultimi 6 mesi</option><option value="0">Tutto</option>
+          </select></span>
+        </div>
+        <div id="analisi-corpo"></div>
+      </div>
+
       <div class="widget" style="margin-bottom: var(--sp-lg);">
         <div class="section-title">
           Pareto dei consumi
@@ -1878,7 +1969,7 @@ html, body { overflow-x: hidden; }
           </div>
         </div>
         <div class="table-wrap">
-          <table class="data" id="tabella-prodotti">
+          <table class="data stack" id="tabella-prodotti">
             <thead>
               <tr>
                 <th class="sortable" data-sort="prodotto">Prodotto</th>
@@ -1931,7 +2022,7 @@ html, body { overflow-x: hidden; }
       <div class="widget">
         <div class="section-title">Archivio mesi</div>
         <div class="table-wrap">
-          <table class="data">
+          <table class="data stack">
             <thead>
               <tr>
                 <th>Mese</th>
@@ -1944,6 +2035,14 @@ html, body { overflow-x: hidden; }
             </thead>
             <tbody id="archivio-body"></tbody>
           </table>
+        </div>
+        <p style="color: var(--text-dim); font-size: 12px; margin-top: 8px;">Tocca un mese per vedere movimenti e scontrini. Lo storico completo è salvato su questo dispositivo (IndexedDB) e incluso nel backup JSON.</p>
+        <div id="confronto-mesi" style="margin-top: var(--sp-md); display:none;">
+          <div class="section-title" style="margin-bottom:8px;">Confronta due mesi</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <select id="conf-a"></select> <span style="color:var(--text-dim);">→</span> <select id="conf-b"></select>
+          </div>
+          <div id="conf-risultato" style="margin-top:10px;"></div>
         </div>
       </div>
     </section>
@@ -1991,11 +2090,43 @@ html, body { overflow-x: hidden; }
         <p style="color: var(--text-muted); margin-bottom: 16px;">I dati sono salvati in localStorage. L'import riconosce sia il nuovo formato sia il vecchio (con 5 contenitori) e migra automaticamente.</p>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="btn btn-primary" id="btn-backup">Esporta backup</button>
+          <button class="btn btn-secondary" id="btn-condividi" title="Apre il pannello di condivisione (Drive, File, iCloud)">Condividi / Salva su Drive</button>
           <label class="btn btn-secondary" style="cursor: pointer;">
             Importa backup
             <input type="file" id="file-import" accept=".json" style="display: none;" />
           </label>
           <button class="btn btn-danger-outline" id="btn-reset-tutto" style="margin-left: auto;">Reset totale</button>
+        </div>
+      </div>
+
+      <div class="widget" style="margin-top: var(--sp-lg);" id="widget-ia">
+        <div class="section-title">IA per gli scontrini (Gemini)</div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 10px;">
+          Con Gemini la <strong>foto dello scontrino viene inviata a Google</strong> per leggerla con più precisione (piano gratuito: le richieste possono essere usate da Google per migliorare i suoi servizi).
+          Resta disattivato finché non lo abiliti. La chiave è salvata <strong>solo su questo dispositivo</strong> e non finisce nei backup.
+        </p>
+        <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="ia-attivo" /> Usa Gemini per analizzare gli scontrini</label>
+        <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
+          <div class="form-group"><label class="form-label">Chiave API (Google AI Studio)</label><input type="password" id="ia-chiave" autocomplete="off" placeholder="incolla qui la chiave" /></div>
+          <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" placeholder="gemini-2.5-flash" /></div>
+        </div>
+        <label style="display:flex; gap:8px; align-items:center; margin:8px 0;"><input type="checkbox" id="ia-foto" /> Conserva una copia ridotta della foto nei casi di prova (serve a migliorare l'OCR)</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-ia-salva">Salva</button>
+          <button class="btn btn-secondary" id="btn-ia-test">Prova la connessione</button>
+        </div>
+        <p id="ia-stato" style="font-size:13px; margin-top:8px;"></p>
+
+        <div class="section-title" style="margin-top: var(--sp-lg);">Casi di prova per migliorare l'OCR</div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
+          Ogni scontrino salvato conserva il testo dell'OCR locale, la lettura di Gemini e la tua correzione finale. Servono per misurare quanto l'OCR integrato è affidabile e per migliorarlo:
+          esporta il file e passalo a Claude per aggiornare il parser. Quando l'accuratezza è alta puoi spegnere Gemini.
+        </p>
+        <p id="ia-casi-info" style="font-size:13px; margin-bottom:8px;"></p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-secondary" id="btn-casi-export">Esporta casi di prova</button>
+          <label style="font-size:12px;"><input type="checkbox" id="casi-con-foto" /> includi le foto</label>
+          <button class="btn btn-danger-outline" id="btn-casi-svuota" style="margin-left:auto;">Elimina i casi</button>
         </div>
       </div>
 
@@ -2129,6 +2260,80 @@ html, body { overflow-x: hidden; }
   </div>
 </div>
 
+<!-- ===== MODAL: Importa estratto conto ===== -->
+<div class="modal-backdrop" id="modal-banca" role="dialog" aria-modal="true">
+  <div class="modal wide" style="max-width: 980px;">
+    <h3>Importa estratto conto</h3>
+    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: var(--sp-md);">
+      Carica un file <strong>.csv</strong> o <strong>.xlsx</strong> scaricato dalla tua banca (settimanale o mensile). Controlla l'anteprima: i doppioni sono già deselezionati.
+      I file .xls (vecchio formato) vanno salvati come .xlsx o .csv.
+    </p>
+    <input type="file" id="banca-file" accept=".csv,.txt,.xlsx" />
+    <div id="banca-corpo" style="margin-top: var(--sp-md);"></div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-md);">
+      <button class="btn btn-secondary" id="banca-annulla">Chiudi</button>
+      <button class="btn btn-primary" id="banca-importa" disabled>Importa</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Nuova entrata extra ===== -->
+<div class="modal-backdrop" id="modal-extra" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3>Entrata extra</h3>
+    <p style="color: var(--text-muted); font-size: 12px; margin-bottom: var(--sp-md);">
+      Rimborso, regalo, lavoretto… va nel totale del mese. Poi decidi tu come ripartirla tra Needs, Wants e Savings.
+    </p>
+    <div class="quick-add">
+      <div class="quick-amount-wrap">
+        <span class="euro">€</span>
+        <input type="number" step="0.01" min="0" id="ex-importo" placeholder="0.00" autocomplete="off" />
+      </div>
+      <div class="field-row">
+        <div class="form-group"><label class="form-label">Data</label><input type="date" id="ex-data" /></div>
+        <div class="form-group"><label class="form-label">Descrizione (opzionale)</label><input type="text" id="ex-desc" placeholder="Es. Rimborso spese" /></div>
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-sm);">
+        <button class="btn btn-secondary" id="ex-cancel">Annulla</button>
+        <button class="btn btn-primary" id="ex-save">Registra</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Ripartizione entrata extra ===== -->
+<div class="modal-backdrop" id="modal-alloc" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3>Ripartisci l'entrata</h3>
+    <p id="alloc-info" style="color: var(--text-muted); font-size: 13px; margin-bottom: var(--sp-md);"></p>
+    <div class="form-row" style="grid-template-columns: repeat(3, 1fr); gap: 10px;">
+      <div class="form-group"><label class="form-label">Needs €</label><input type="number" step="0.01" min="0" id="al-needs" /></div>
+      <div class="form-group"><label class="form-label">Wants €</label><input type="number" step="0.01" min="0" id="al-wants" /></div>
+      <div class="form-group"><label class="form-label">Savings €</label><input type="number" step="0.01" min="0" id="al-savings" /></div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+      <button class="btn btn-ghost" id="al-503020">Dividi 50/30/20</button>
+      <button class="btn btn-ghost" id="al-tutto-savings">Tutto in Savings</button>
+    </div>
+    <p id="alloc-resto" style="margin-top:10px; font-size:13px;"></p>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-md);">
+      <button class="btn btn-secondary" id="al-cancel">Annulla</button>
+      <button class="btn btn-primary" id="al-save">Salva ripartizione</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Dettaglio mese archiviato ===== -->
+<div class="modal-backdrop" id="modal-mese" role="dialog" aria-modal="true">
+  <div class="modal wide">
+    <h3 id="mese-titolo">Mese</h3>
+    <div id="mese-corpo"></div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--sp-md);">
+      <button class="btn btn-secondary" id="mese-chiudi">Chiudi</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== TOAST HOST ===== -->
 <div class="toast-host" id="toast-host"></div>
 
@@ -2146,8 +2351,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06a';
-const APP_BUILD_NOTE = 'Revisione tecnica: import validato, date locali, importi al centesimo, SRI sui CDN, cache offline più robusta, promemoria backup';
+const APP_VERSION = '2026.11.06f';
+const APP_BUILD_NOTE = 'Grafica mobile: schede al posto delle tabelle, filtri compatti, tap più ampi; Gemini, analisi, import banca, entrate extra';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -2587,20 +2792,276 @@ document.addEventListener('keydown', e => {
 /* ============================================================
    DASHBOARD
    ============================================================ */
+/* ============================================================
+   IMPORT ESTRATTO CONTO (CSV / XLSX)
+   Flusso: file -> righe grezze -> colonne (rilevate, correggibili) -> anteprima
+   con categoria suggerita e doppioni deselezionati -> import.
+   Uscite -> movimenti (origine 'banca'); entrate -> entrate extra (da ripartire).
+   ============================================================ */
+let banca = null; // { righe, mapp, opzioni, voci: [...] }
+
+async function leggiFileBanca(file) {
+  if (/\.xls$/i.test(file.name)) throw new Error('i file .xls non sono supportati: salvalo come .xlsx o .csv');
+  if (/\.xlsx$/i.test(file.name)) return LettoreXlsx.leggi(await file.arrayBuffer());
+  const buf = await file.arrayBuffer();
+  let testo = new TextDecoder('utf-8').decode(buf);
+  if (testo.includes('\uFFFD')) testo = new TextDecoder('windows-1252').decode(buf); // export bancari spesso in Windows-1252
+  return parseCSV(testo);
+}
+
+function preparaRigheBanca() {
+  const mov = estraiMovimentiBanca(banca.righe, banca.mapp, banca.opzioni);
+  banca.voci = mov.map(r => {
+    const dop = trovaDoppione(r, stato);
+    const sugg = r.importo < 0 ? indovinaVoce(r.descrizione, stato) : null;
+    return { ...r, doppione: dop, sel: !dop, macro: sugg ? sugg.macro : '', voce: sugg ? sugg.voce : '' };
+  });
+}
+
+function renderBanca() {
+  const box = document.getElementById('banca-corpo');
+  const btn = document.getElementById('banca-importa');
+  if (!banca) { box.innerHTML = ''; btn.disabled = true; return; }
+  const nomi = banca.mapp.nomi;
+  const optCol = (sel, vuoto) => `<option value="-1">${vuoto}</option>` + nomi.map((n, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${escapeHtml(n || 'Colonna ' + (i + 1))}</option>`).join('');
+  const c = banca.mapp.colonne;
+  const selCol = (k, etichetta, vuoto) => `<label class="form-label" style="display:block;">${etichetta}<select data-col="${k}" class="banca-col">${optCol(c[k], vuoto)}</select></label>`;
+  const n = banca.voci.length, sel = banca.voci.filter(v => v.sel).length;
+  const righeHtml = banca.voci.map((v, i) => {
+    const uscita = v.importo < 0;
+    const macroOpt = '<option value="">— macro —</option>' + MACRO_IDS_UI.map(m => `<option value="${m}" ${v.macro === m ? 'selected' : ''}>${MACRO_LABEL[m]}</option>`).join('');
+    const vociOpt = '<option value="">— voce —</option>' + (v.macro ? stato.macros[v.macro].voci.map(x => `<option value="${escapeHtml(x.id)}" ${v.voce === x.id ? 'selected' : ''}>${escapeHtml(x.nome)}</option>`).join('') : '');
+    return `<tr class="${v.doppione ? 'banca-dop' : ''}">
+      <td><input type="checkbox" class="b-sel" data-i="${i}" ${v.sel ? 'checked' : ''} /></td>
+      <td class="num">${fmtData(v.data)}</td>
+      <td>${escapeHtml(v.descrizione) || '—'}${v.doppione ? `<div style="color:var(--warning); font-size:11px;">${v.doppione === 'esatto' ? 'già importata' : 'possibile doppione (stessa data e importo)'}</div>` : ''}</td>
+      <td class="amount-cell" style="color:${uscita ? 'var(--text)' : 'var(--success)'}">${uscita ? '' : '+'}${fmt(v.importo)}</td>
+      <td>${uscita ? `<select class="b-macro" data-i="${i}">${macroOpt}</select> <select class="b-voce" data-i="${i}" ${v.macro ? '' : 'disabled'}>${vociOpt}</select>` : '<span style="color:var(--text-dim); font-size:12px;">Entrata extra</span>'}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <details ${n ? '' : 'open'} style="margin-bottom:10px;"><summary style="cursor:pointer; color:var(--text-muted);">Colonne rilevate (tocca per correggere)</summary>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:8px;">
+        ${selCol('data', 'Data', '—')}${selCol('descrizione', 'Descrizione', '—')}${selCol('importo', 'Importo (unico)', '— (Dare/Avere) —')}
+        ${selCol('uscite', 'Uscite/Dare', '—')}${selCol('entrate', 'Entrate/Avere', '—')}
+      </div>
+      <label style="display:block; margin-top:8px; font-size:13px;"><input type="checkbox" id="banca-inverti" ${banca.opzioni.invertiSegno ? 'checked' : ''} /> Inverti il segno (le uscite risultano positive)</label>
+    </details>
+    ${n ? `<p style="font-size:13px; color:var(--text-muted);">${n} righe lette · ${sel} selezionate. <button class="btn btn-ghost" id="banca-tutte" style="padding:2px 8px; font-size:12px;">Seleziona tutte</button> <button class="btn btn-ghost" id="banca-nessuna" style="padding:2px 8px; font-size:12px;">Nessuna</button></p>
+    <div class="table-wrap" style="max-height:50vh; overflow:auto;"><table class="data"><thead><tr><th></th><th>Data</th><th>Descrizione</th><th style="text-align:right;">Importo</th><th>Categoria</th></tr></thead><tbody>${righeHtml}</tbody></table></div>
+    <p style="font-size:12px; color:var(--text-dim); margin-top:6px;">Le uscite selezionate senza categoria non vengono importate. Le categorie scelte vengono ricordate per i prossimi import.</p>`
+    : '<div class="alert warning">Nessun movimento riconosciuto: controlla le colonne qui sopra.</div>'}`;
+  btn.disabled = sel === 0;
+  btn.textContent = sel ? `Importa ${sel} righe` : 'Importa';
+
+  box.querySelectorAll('.banca-col').forEach(el => el.addEventListener('change', () => {
+    banca.mapp.colonne[el.dataset.col] = Number(el.value);
+    preparaRigheBanca(); renderBanca();
+  }));
+  const inv = box.querySelector('#banca-inverti');
+  if (inv) inv.addEventListener('change', () => { banca.opzioni.invertiSegno = inv.checked; preparaRigheBanca(); renderBanca(); });
+  box.querySelectorAll('.b-sel').forEach(el => el.addEventListener('change', () => { banca.voci[el.dataset.i].sel = el.checked; renderBanca(); }));
+  box.querySelectorAll('.b-macro').forEach(el => el.addEventListener('change', () => { const v = banca.voci[el.dataset.i]; v.macro = el.value; v.voce = ''; renderBanca(); }));
+  box.querySelectorAll('.b-voce').forEach(el => el.addEventListener('change', () => { banca.voci[el.dataset.i].voce = el.value; }));
+  const t = box.querySelector('#banca-tutte'), nn = box.querySelector('#banca-nessuna');
+  if (t) t.addEventListener('click', () => { banca.voci.forEach(v => { v.sel = true; }); renderBanca(); });
+  if (nn) nn.addEventListener('click', () => { banca.voci.forEach(v => { v.sel = false; }); renderBanca(); });
+}
+
+document.getElementById('btn-import-banca').addEventListener('click', () => {
+  banca = null; renderBanca();
+  document.getElementById('banca-file').value = '';
+  document.getElementById('modal-banca').classList.add('active');
+});
+document.getElementById('banca-annulla').addEventListener('click', () => { banca = null; document.getElementById('modal-banca').classList.remove('active'); });
+document.getElementById('banca-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const righe = await leggiFileBanca(file);
+    if (!righe.length) throw new Error('il file è vuoto');
+    banca = { righe, mapp: rilevaColonne(righe), opzioni: { invertiSegno: false }, voci: [] };
+    preparaRigheBanca(); renderBanca();
+  } catch (err) {
+    banca = null; renderBanca();
+    toast('Lettura non riuscita: ' + err.message, 'danger', 6000);
+  }
+});
+document.getElementById('banca-importa').addEventListener('click', () => {
+  if (!banca) return;
+  let uscite = 0, entrate = 0, senzaCat = 0, saltate = 0;
+  banca.voci.forEach(v => {
+    if (!v.sel) return;
+    if (v.importo < 0) {
+      if (!v.macro || !v.voce || !isVoceValida(v.macro, v.voce)) { senzaCat++; return; }
+      stato.movimenti.push({ id: uid(), data: v.data, macro: v.macro, voce: v.voce, importo: round2(-v.importo), descrizione: v.descrizione, origine: 'banca', rif: v.rif });
+      const k = chiaveRegola(v.descrizione);
+      if (k && k !== '__proto__') Object.defineProperty(stato.regoleBanca, k, { value: { macro: v.macro, voce: v.voce }, enumerable: true, writable: true, configurable: true });
+      uscite++;
+    } else {
+      stato.entrateExtra.push({ id: uid(), data: v.data, descrizione: v.descrizione || 'Accredito', importo: round2(v.importo), alloc: { needs: 0, wants: 0, savings: 0 }, rif: v.rif });
+      entrate++;
+    }
+  });
+  if (!uscite && !entrate) { toast('Nessuna riga importata: assegna una categoria alle uscite selezionate.', 'warning', 5000); return; }
+  salvaStato();
+  banca = null;
+  document.getElementById('modal-banca').classList.remove('active');
+  toast(`Importate ${uscite} uscite e ${entrate} entrate extra` + (senzaCat ? ` · ${senzaCat} uscite senza categoria saltate` : '') + '.', 'success', 6000);
+  renderDashboard();
+  const attiva = document.querySelector('.nav-item.active')?.dataset.view;
+  (VIEW_RENDERERS[attiva] || renderDashboard)();
+});
+
+/* ---------- Entrate extra ---------- */
+function renderEntrateExtra() {
+  const lista = document.getElementById('extra-lista');
+  const meta = document.getElementById('extra-meta');
+  if (!lista) return;
+  const tot = totaleEntrateExtra(stato), daAss = extraDaAssegnare(stato);
+  meta.textContent = stato.entrateExtra.length ? fmt(tot) + ' totali' + (daAss > 0 ? ' · ' + fmt(daAss) + ' da assegnare' : '') : '';
+  if (!stato.entrateExtra.length) {
+    lista.innerHTML = '<div class="empty-state">Nessuna entrata extra questo mese.</div>';
+    return;
+  }
+  lista.innerHTML = stato.entrateExtra.map(e => {
+    const resto = round2(e.importo - extraAssegnata(e));
+    const split = MACRO_IDS_UI.filter(id => e.alloc[id] > 0).map(id => MACRO_LABEL[id] + ' ' + fmt(e.alloc[id])).join(' · ');
+    const sub = (split ? split : '') + (resto > 0 ? (split ? ' · ' : '') + 'da assegnare ' + fmt(resto) : '');
+    return `<div class="extra-riga">
+      <span class="e-data num">${fmtData(e.data)}</span>
+      <div class="e-desc">${escapeHtml(e.descrizione || 'Entrata extra')}${sub ? `<div class="e-sub">${escapeHtml(sub)}</div>` : ''}</div>
+      <span class="e-imp">${fmt(e.importo)}</span>
+      <div class="e-azioni"><button class="btn btn-ghost extra-alloc" data-id="${escapeHtml(e.id)}" style="padding:6px 12px; font-size:12px;">Ripartisci</button>
+        <button class="btn-icon-danger extra-del" data-id="${escapeHtml(e.id)}">elimina</button></div>
+    </div>`;
+  }).join('');
+  lista.querySelectorAll('.extra-alloc').forEach(b => b.addEventListener('click', () => apriAllocazione(b.dataset.id)));
+  lista.querySelectorAll('.extra-del').forEach(b => b.addEventListener('click', () => eliminaEntrataExtra(b.dataset.id)));
+}
+const MACRO_IDS_UI = ['needs', 'wants', 'savings'];
+
+document.getElementById('btn-extra-add').addEventListener('click', () => {
+  document.getElementById('ex-importo').value = '';
+  document.getElementById('ex-desc').value = '';
+  document.getElementById('ex-data').value = oggi();
+  document.getElementById('modal-extra').classList.add('active');
+  document.getElementById('ex-importo').focus();
+});
+document.getElementById('ex-cancel').addEventListener('click', () => document.getElementById('modal-extra').classList.remove('active'));
+document.getElementById('ex-save').addEventListener('click', () => {
+  const importo = round2(parseFloat(document.getElementById('ex-importo').value));
+  const data = document.getElementById('ex-data').value;
+  if (!(importo > 0)) { toast('Inserisci un importo valido.', 'warning'); return; }
+  if (!data) { toast('Inserisci una data.', 'warning'); return; }
+  const e = { id: uid(), data, descrizione: document.getElementById('ex-desc').value.trim(), importo, alloc: { needs: 0, wants: 0, savings: 0 } };
+  stato.entrateExtra.push(e);
+  salvaStato();
+  document.getElementById('modal-extra').classList.remove('active');
+  toast('Entrata registrata: ' + fmt(importo), 'success');
+  renderDashboard();
+  apriAllocazione(e.id); // propone subito di ripartirla (si può annullare: resta "da assegnare")
+});
+
+let allocId = null;
+function apriAllocazione(id) {
+  const e = stato.entrateExtra.find(x => x.id === id);
+  if (!e) return;
+  allocId = id;
+  document.getElementById('alloc-info').textContent = (e.descrizione || 'Entrata extra') + ' · ' + fmt(e.importo) + '. Lascia vuoto ciò che vuoi tenere "da assegnare".';
+  MACRO_IDS_UI.forEach(m => { document.getElementById('al-' + m).value = e.alloc[m] || ''; });
+  aggiornaRestoAllocazione();
+  document.getElementById('modal-alloc').classList.add('active');
+}
+function leggiAllocazione() {
+  const a = {};
+  MACRO_IDS_UI.forEach(m => { a[m] = document.getElementById('al-' + m).value; });
+  return a;
+}
+function aggiornaRestoAllocazione() {
+  const e = stato.entrateExtra.find(x => x.id === allocId);
+  const el = document.getElementById('alloc-resto');
+  if (!e) return;
+  try {
+    const { alloc } = calcolaAllocazione(e, leggiAllocazione());
+    const resto = round2(e.importo - alloc.needs - alloc.wants - alloc.savings);
+    el.style.color = 'var(--text-muted)';
+    el.textContent = resto > 0 ? 'Restano da assegnare ' + fmt(resto) + '.' : 'Tutta l\'entrata è ripartita.';
+  } catch (err) { el.style.color = 'var(--danger)'; el.textContent = 'Attenzione: ' + err.message + '.'; }
+}
+MACRO_IDS_UI.forEach(m => document.getElementById('al-' + m).addEventListener('input', aggiornaRestoAllocazione));
+document.getElementById('al-503020').addEventListener('click', () => {
+  const e = stato.entrateExtra.find(x => x.id === allocId); if (!e) return;
+  const n = round2(e.importo * 0.5), w = round2(e.importo * 0.3);
+  document.getElementById('al-needs').value = n;
+  document.getElementById('al-wants').value = w;
+  document.getElementById('al-savings').value = round2(e.importo - n - w);
+  aggiornaRestoAllocazione();
+});
+document.getElementById('al-tutto-savings').addEventListener('click', () => {
+  const e = stato.entrateExtra.find(x => x.id === allocId); if (!e) return;
+  document.getElementById('al-needs').value = 0; document.getElementById('al-wants').value = 0;
+  document.getElementById('al-savings').value = e.importo;
+  aggiornaRestoAllocazione();
+});
+document.getElementById('al-cancel').addEventListener('click', () => document.getElementById('modal-alloc').classList.remove('active'));
+document.getElementById('al-save').addEventListener('click', () => {
+  const e = stato.entrateExtra.find(x => x.id === allocId);
+  if (!e) return;
+  let r;
+  try { r = calcolaAllocazione(e, leggiAllocazione()); }
+  catch (err) { toast('Ripartizione non valida: ' + err.message, 'warning', 5000); return; }
+  MACRO_IDS_UI.forEach(m => { stato.saldoRiportato[m] = round2((stato.saldoRiportato[m] || 0) + r.delta[m]); });
+  e.alloc = r.alloc;
+  salvaStato();
+  document.getElementById('modal-alloc').classList.remove('active');
+  toast('Ripartizione salvata.', 'success');
+  const attiva = document.querySelector('.nav-item.active')?.dataset.view;
+  (VIEW_RENDERERS[attiva] || renderDashboard)();
+  renderDashboard();
+});
+function eliminaEntrataExtra(id) {
+  const e = stato.entrateExtra.find(x => x.id === id);
+  if (!e) return;
+  apriModal('Eliminare l\'entrata?', 'Verrà tolta dal totale e dai budget a cui l\'avevi assegnata.', () => {
+    MACRO_IDS_UI.forEach(m => { stato.saldoRiportato[m] = round2((stato.saldoRiportato[m] || 0) - (e.alloc[m] || 0)); });
+    stato.entrateExtra = stato.entrateExtra.filter(x => x.id !== id);
+    salvaStato();
+    renderDashboard();
+  });
+}
+
 let chartDonut = null;
 let chartAndamento = null;
 let chartTopVoci = null;
 let donutState = { level: 'macro', macro: null };
 
+/** Animazione del numero principale (rispetta prefers-reduced-motion). */
+function animaNumero(el, valore, formato, ms = 550) {
+  const prima = Number(el.dataset.v);
+  el.dataset.v = String(valore);
+  const ridotto = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (ridotto || !Number.isFinite(prima) || prima === valore) { el.textContent = formato(valore); return; }
+  const t0 = performance.now();
+  const passo = t => {
+    if (el.dataset.v !== String(valore)) return;          // è arrivato un valore più recente
+    const k = Math.min(1, (t - t0) / ms);
+    el.textContent = formato(prima + (valore - prima) * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(passo);
+  };
+  requestAnimationFrame(passo);
+}
+
 function renderDashboard() {
   document.getElementById('current-month-label').textContent = stato.meseCorrente;
-  document.getElementById('reddito-display').textContent = fmtRound(stato.reddito);
+  document.getElementById('reddito-display').textContent = fmtRound(redditoTotale(stato));
+  renderEntrateExtra();
 
   const tB = totBudget();
   const tS = totSpeso();
-  const tR = tB - tS + Object.values(stato.saldoRiportato).reduce((a,v)=>a+(Number(v)||0),0);
+  const tR = round2(tB - tS + Object.values(stato.saldoRiportato).reduce((a,v)=>a+(Number(v)||0),0) + extraDaAssegnare(stato));
 
-  document.getElementById('hero-residuo').textContent = fmt(tR);
+  animaNumero(document.getElementById('hero-residuo'), tR, fmt);
   document.getElementById('hero-mese').textContent = stato.meseCorrente;
   document.getElementById('hero-pct').textContent = (tB > 0 ? Math.round((tR / tB) * 100) : 0) + '% del budget';
   document.getElementById('hero-budget').textContent = fmt(tB);
@@ -3346,28 +3807,115 @@ function gestisciSelezioneFile(e) {
 ocrInput.addEventListener('change', gestisciSelezioneFile);
 
 
+/* ---------- Gemini: configurazione e client ---------- */
+const IA_KEY = 'tenuta-spese.ia';   // SOLO localStorage del dispositivo: mai in `stato`, quindi mai nei backup
+const IA_MODELLO_DEFAULT = 'gemini-2.5-flash';
+function configIA() {
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem(IA_KEY) || '{}') || {}; } catch (_) {}
+  return { attivo: !!c.attivo, chiave: String(c.chiave || ''), modello: String(c.modello || IA_MODELLO_DEFAULT).trim() || IA_MODELLO_DEFAULT, salvaFoto: !!c.salvaFoto };
+}
+function salvaConfigIA(c) { try { localStorage.setItem(IA_KEY, JSON.stringify(c)); return true; } catch (_) { return false; } }
+const geminiPronto = () => { const c = configIA(); return c.attivo && c.chiave.length > 10; };
+
+/** Immagine -> JPEG ridotto (lato max `max` px): meno dati inviati, richiesta più veloce. */
+function ridimensionaJpeg(dataUrl, max = 1600, qualita = 0.8) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', qualita);
+      resolve({ mime: 'image/jpeg', base64: url.split(',')[1], dataUrl: url });
+    };
+    img.onerror = () => reject(new Error('immagine non leggibile'));
+    img.src = dataUrl;
+  });
+}
+
+async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(ia.modello) + ':generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ia.chiave },   // chiave in header, mai nell'URL
+      body: JSON.stringify(corpo),
+      signal: ctrl.signal
+    });
+    if (!res.ok) {
+      let det = '';
+      try { det = (await res.json()).error?.message || ''; } catch (_) {}
+      throw new Error(messaggioErroreGemini(res.status, det));
+    }
+    const j = await res.json();
+    const testo = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+    if (!testo) throw new Error(j.promptFeedback?.blockReason ? 'richiesta bloccata da Gemini (' + j.promptFeedback.blockReason + ')' : 'risposta vuota da Gemini');
+    return testo;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Gemini non ha risposto in tempo');
+    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
+async function analizzaConGemini(pagine) {
+  const ia = configIA();
+  const imgs = [];
+  for (const p of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(p));
+  const testo = await chiamaGemini(costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI), ia);
+  return { lettura: normalizzaRispostaGemini(testo, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null };
+}
+
+/** OCR locale (Tesseract) su tutte le pagine; restituisce {testo, parsed}. */
+async function ocrLocale(pagine) {
+  const testiPagina = [];
+  for (let p = 0; p < pagine.length; p++) {
+    const etichettaPag = pagine.length > 1 ? ` · pagina ${p + 1}/${pagine.length}` : '';
+    ocrStatus.textContent = 'Pre-processing immagine…' + etichettaPag;
+    const varianti = await preprocessReceiptImage(pagine[p]);
+    testiPagina.push(await ocrPaginaConRitentativi(varianti, etichettaPag));
+  }
+  // Le pagine si concatenano PRIMA del parsing: il TOTALE sta sull'ultima,
+  // le voci sulle precedenti, e i checkpoint di coerenza devono vederli insieme.
+  const testo = testiPagina.filter(Boolean).join('\n');
+  return { testo, parsed: parseScontrino(testo) };
+}
+
+/* Lettura in corso: tiene insieme OCR locale, Gemini e (al salvataggio) la correzione finale. */
+let ultimaLettura = null;
+
+function aggiornaConfrontoIA() {
+  const L0 = ultimaLettura;
+  const box = document.getElementById('ocr-confronto');
+  if (!box || !L0 || !L0.ocr || !L0.gemini) return;
+  const c = confrontaLetture(L0.ocr.righe, L0.gemini.righe);
+  box.innerHTML = `<div class="alert info" style="margin-bottom:10px;">Confronto: l'OCR locale ha letto <strong>${c.righeUguali} righe su ${Math.max(c.righeLette, c.righeRif)}</strong> uguali a Gemini (${Math.round(c.accuratezza * 100)}%). Il confronto finale, dopo la tua correzione, migliora le statistiche in Impostazioni.</div>`;
+}
+
 async function gestisciFileOCR(file) {
   ocrPreview.classList.remove('active');
   ocrProgress.classList.add('active');
   ocrProgressFill.style.width = '0%';
   ocrStatus.textContent = 'Caricamento file…';
+  const confrontoBox = document.getElementById('ocr-confronto');
+  if (confrontoBox) confrontoBox.innerHTML = '';
 
   try {
     // HEIC/HEIF non sono decodificabili da <img>/canvas nei browser desktop.
-    // Diamo subito un messaggio chiaro per evitare un OCR su immagine vuota.
     if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type)) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
     }
-
-    if (typeof Tesseract === 'undefined') {
+    const usaGemini = geminiPronto();
+    const haOcr = typeof Tesseract !== 'undefined';
+    if (!haOcr && !usaGemini) {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
 
-    // Lo scanner documenti nativo di iOS (File → "Scansiona documenti", cioè
-    // VNDocumentCameraViewController: bordi automatici, correzione prospettiva)
-    // consegna un PDF con UNA PAGINA PER SCATTO. Vanno quindi processate tutte
-    // le pagine, non solo la prima, altrimenti di uno scontrino lungo scansionato
-    // in più riprese si perde tutto tranne il primo pezzo.
+    // Lo scanner documenti nativo di iOS consegna un PDF con UNA PAGINA PER SCATTO:
+    // vanno processate tutte le pagine, non solo la prima.
     let pagine;
     if (file.type === 'application/pdf') {
       ocrStatus.textContent = 'Rendering PDF…';
@@ -3376,25 +3924,51 @@ async function gestisciFileOCR(file) {
       pagine = [await fileToDataUrl(file)];
     }
 
-    const testiPagina = [];
-    for (let p = 0; p < pagine.length; p++) {
-      const etichettaPag = pagine.length > 1 ? ` · pagina ${p + 1}/${pagine.length}` : '';
-      ocrStatus.textContent = 'Pre-processing immagine…' + etichettaPag;
-      const varianti = await preprocessReceiptImage(pagine[p]);
-      testiPagina.push(await ocrPaginaConRitentativi(varianti, etichettaPag));
+    const lettura = ultimaLettura = { ocr: null, ocrText: '', gemini: null, foto: null, ocrErrore: '', geminiErrore: '' };
+    const attiva = () => ultimaLettura === lettura;   // una nuova scansione invalida le vecchie
+
+    const pOcr = haOcr
+      ? ocrLocale(pagine).then(r => { lettura.ocr = r.parsed; lettura.ocrText = r.testo; if (attiva()) { ocrText = r.testo; aggiornaConfrontoIA(); } return r; })
+      : Promise.reject(new Error('Libreria OCR non caricata'));
+    const pGem = usaGemini
+      ? (ocrStatus.textContent = 'Analisi con Gemini…', analizzaConGemini(pagine).then(r => { lettura.gemini = r.lettura; lettura.foto = r.foto; return r; }))
+      : Promise.reject(new Error('off'));
+    pOcr.catch(e => { lettura.ocrErrore = e.message; });
+    pGem.catch(e => { lettura.geminiErrore = e.message; });
+
+    let parsed = null, fonte = 'ocr', avvisoIA = '';
+    if (usaGemini) {
+      const g = await pGem.then(r => r.lettura, e => { avvisoIA = 'Gemini non disponibile (' + e.message + '): uso l\'OCR locale.'; return null; });
+      if (g && !g.errori.length) {
+        parsed = { data: g.data, negozio: g.negozio, righe: g.righe, errori: [], avvisi: g.avvisi, totale: g.totale, totaleRiportato: g.totaleRiportato, righeDaVerificare: 0 };
+        fonte = 'gemini';
+      } else if (g) avvisoIA = 'Gemini non ha trovato prodotti: uso l\'OCR locale.';
+    }
+    if (!parsed) {
+      const r = await pOcr;      // se fallisce va al catch esterno con il motivo
+      parsed = r.parsed; fonte = 'ocr';
+      if (attiva()) ocrText = r.testo;
     }
 
-    // Le pagine si concatenano PRIMA del parsing: il TOTALE sta sull'ultima,
-    // le voci sulle precedenti, e i checkpoint di coerenza devono vederli insieme.
-    const testoCompleto = testiPagina.filter(Boolean).join('\n');
-    const parsed = parseScontrino(testoCompleto);
-
-    ocrText = testoCompleto;
     ocrTotaleRiportato = parsed.totaleRiportato;
     ocrProgressFill.style.width = '100%';
     ocrStatus.textContent = 'Estrazione campi…';
 
     popolaPreviewDaParser(parsed);
+    if (fonte === 'gemini') {
+      const box = document.getElementById('ocr-alerts');
+      const d = document.createElement('div');
+      d.className = 'alert info'; d.style.marginBottom = '10px';
+      d.textContent = 'Scontrino letto da Gemini. L\'OCR locale gira in parallelo per il confronto.';
+      box.prepend(d);
+      aggiornaConfrontoIA();
+    } else if (avvisoIA) {
+      const box = document.getElementById('ocr-alerts');
+      const d = document.createElement('div');
+      d.className = 'alert warning'; d.style.marginBottom = '10px';
+      d.textContent = avvisoIA;
+      box.prepend(d);
+    }
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
 
@@ -3404,7 +3978,7 @@ async function gestisciFileOCR(file) {
     } else {
       const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
       const daVerificare = parsed.righeDaVerificare || 0;
-      let msg = `OCR completato: ${parsed.righe.length} voci estratte`;
+      let msg = `${fonte === 'gemini' ? 'Gemini' : 'OCR'} completato: ${parsed.righe.length} voci estratte`;
       if (conSconto) msg += `, ${conSconto} con sconto`;
       if (daVerificare) msg += `, ${daVerificare} da verificare`;
       toast(msg, daVerificare || parsed.avvisi.length ? 'warning' : 'success');
@@ -3416,8 +3990,8 @@ async function gestisciFileOCR(file) {
     ocrPreview.classList.add('active');
     // Anche in caso di eccezione l'utente vede il motivo nel riquadro, non
     // solo in un toast che scompare.
-    mostraEsitoOCR({ righe: [], errori: ['OCR fallito: ' + e.message], avvisi: [], totale: 0 });
-    toast('OCR fallito: ' + e.message, 'danger', 6000);
+    mostraEsitoOCR({ righe: [], errori: ['Lettura fallita: ' + e.message], avvisi: [], totale: 0 });
+    toast('Lettura fallita: ' + e.message, 'danger', 6000);
   }
 }
 
@@ -4477,7 +5051,7 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   }
   const righe = [];
   document.querySelectorAll('#scontrino-rows .scontrino-row').forEach(row => {
-    const prodotto = row.querySelector('.sr-prodotto').value.trim();
+    const prodotto = nomeProdottoPulito(row.querySelector('.sr-prodotto').value);
     const categoria = row.querySelector('.sr-categoria').value;
     const prezzo = parseFloat(row.querySelector('.sr-prezzo').value);
     if (prodotto && !isNaN(prezzo) && prezzo > 0) {
@@ -4511,7 +5085,8 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   }
 
   const scontrinoId = uid();
-  const origine = ocrText ? 'ocr' : 'manuale';
+  const origine = (ocrText || (ultimaLettura && ultimaLettura.gemini)) ? 'ocr' : 'manuale';
+  salvaCasoScontrino(righe, totale, negozio, data);
 
   stato.scontrini.push({ id: scontrinoId, data, negozio, localita, totale, origine });
   righe.forEach(r => {
@@ -4537,6 +5112,25 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   document.getElementById('btn-reset-scontrino').click();
   ocrPreview.classList.remove('active');
 });
+
+/** Salva il caso di prova (OCR locale vs Gemini vs correzione finale). Non blocca mai il salvataggio. */
+function salvaCasoScontrino(righe, totale, negozio, data) {
+  const L0 = ultimaLettura;
+  if (!L0 || (!L0.ocr && !L0.gemini) || !Archivio.ok) return;
+  const pulite = rs => rs.map(r => ({ prodotto: r.prodotto, categoria: r.categoria, prezzo: r.prezzo }));
+  const caso = {
+    id: uid(), creato: new Date().toISOString(), negozio, data,
+    ocrText: L0.ocrText || ocrText || '',
+    ocrRighe: L0.ocr ? pulite(L0.ocr.righe) : null, ocrTotale: L0.ocr ? L0.ocr.totale : null,
+    ocrTotaleRiportato: L0.ocr ? L0.ocr.totaleRiportato : null,
+    geminiRighe: L0.gemini ? pulite(L0.gemini.righe) : null, geminiTotale: L0.gemini ? L0.gemini.totale : null,
+    usoGemini: !!L0.gemini,
+    finaleRighe: pulite(righe), totaleFinale: totale,
+    foto: configIA().salvaFoto ? L0.foto : null
+  };
+  Archivio.salvaCaso(caso).catch(e => console.warn('caso di prova non salvato:', e));
+}
+document.getElementById('btn-reset-scontrino').addEventListener('click', () => { ultimaLettura = null; });
 
 /* ============================================================
    STORICO TRANSAZIONI
@@ -4613,13 +5207,13 @@ function applicaFiltri() {
   }
   tbody.innerHTML = filtrate.map(t => `
     <tr>
-      <td class="num">${fmtData(t.data)}</td>
-      <td><span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macro)}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
-      <td>${escapeHtml(t.voceNome)}</td>
-      <td>${escapeHtml(t.descrizione)}</td>
-      <td><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : 'manuale'}</span></td>
-      <td class="amount-cell">${fmt(t.importo)}</td>
-      <td><button class="btn-icon-danger" data-id="${escapeHtml(t.id)}" data-tipo="${escapeHtml(t.tipo)}">elimina</button></td>
+      <td class="num c-data">${fmtData(t.data)}</td>
+      <td class="c-macro"><span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macro)}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
+      <td class="c-voce">${escapeHtml(t.voceNome)}</td>
+      <td class="c-desc">${escapeHtml(t.descrizione)}</td>
+      <td class="c-orig"><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : (t.origine === 'banca' ? 'banca' : 'manuale')}</span></td>
+      <td class="amount-cell c-imp">${fmt(t.importo)}</td>
+      <td class="c-act"><button class="btn-icon-danger" data-id="${escapeHtml(t.id)}" data-tipo="${escapeHtml(t.tipo)}">elimina</button></td>
     </tr>
   `).join('');
 
@@ -4668,6 +5262,9 @@ function exportaCSV() {
     const v = macro?.voci.find(v => v.id === m.voce);
     rows.push([m.data, macro?.nome||'', v?.nome||'', m.descrizione||'', m.origine||'manuale', Number(m.importo).toFixed(2).replace('.',',')]);
   });
+  stato.entrateExtra.forEach(e => {
+    rows.push([e.data, 'Entrata', 'Entrata extra', e.descrizione || '', 'manuale', Number(e.importo).toFixed(2).replace('.',',')]);
+  });
   stato.scontrini.forEach(s => {
     rows.push([s.data, 'Needs', 'Alimentari', 'Scontrino ' + s.negozio, s.origine||'manuale', Number(s.totale).toFixed(2).replace('.',',')]);
   });
@@ -4681,7 +5278,50 @@ function exportaCSV() {
 let prodSort = { key: 'spesaTotale', dir: 'desc' };
 let chartPareto = null;
 
+/* ---------- Analisi "dove spendo" (righe prodotto del mese + mesi archiviati) ---------- */
+async function righeProdottoPeriodo(mesi) {
+  let righe = stato.righeProdotto.slice();
+  if (mesi !== 1) {
+    const tutti = Archivio.ok ? new Map((await Archivio.tutti()).map(r => [r.id, r])) : new Map();
+    let archiviati = stato.archivioMesi;
+    if (mesi > 1) archiviati = archiviati.slice(-(mesi - 1));
+    archiviati.forEach(a => {
+      const r = tutti.get(a.id);
+      righe = righe.concat((r && r.righeProdotto) || a.righeProdotto || []);
+    });
+  }
+  return righe;
+}
+async function renderAnalisiProdotti() {
+  const box = document.getElementById('analisi-corpo');
+  if (!box) return;
+  const mesi = Number(document.getElementById('analisi-periodo').value);
+  let righe;
+  try { righe = await righeProdottoPeriodo(mesi); } catch (e) { box.innerHTML = '<div class="empty-state">Lettura archivio non riuscita.</div>'; return; }
+  const a = aggregaProdotti(righe);
+  if (!a.perProdotto.length) {
+    box.innerHTML = '<div class="empty-state">Nessun prodotto nel periodo. Registra scontrini per popolare l\'analisi. I mesi chiusi prima di questa versione non hanno il dettaglio dei prodotti.</div>';
+    return;
+  }
+  const barre = (voci, nome, valore) => voci.slice(0, 8).map(v => {
+    const pct = a.totale > 0 ? Math.round(valore(v) / a.totale * 100) : 0;
+    return `<div style="margin-bottom:8px;"><div style="display:flex; justify-content:space-between; font-size:13px;"><span>${escapeHtml(nome(v))}</span><span class="num">${fmt(valore(v))} · ${pct}%</span></div>
+      <div style="height:6px; background:var(--bg-elev-2); border-radius:3px;"><div style="height:100%; width:${pct}%; background:var(--accent); border-radius:3px;"></div></div></div>`;
+  }).join('');
+  box.innerHTML = `
+    <p style="color:var(--text-muted); font-size:13px; margin-bottom:10px;">Totale prodotti nel periodo: <strong class="num">${fmt(a.totale)}</strong> · ${a.perProdotto.length} prodotti diversi</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:var(--sp-lg);">
+      <div><div class="section-title" style="font-size:13px;">Per categoria</div>${barre(a.perCategoria, v => v.categoria, v => v.totale)}</div>
+      <div><div class="section-title" style="font-size:13px;">Per negozio</div>${barre(a.perNegozio, v => v.negozio, v => v.totale)}</div>
+      <div><div class="section-title" style="font-size:13px;">Dove costa meno</div>
+        ${a.risparmi.length ? a.risparmi.slice(0, 6).map(r => `<div style="font-size:13px; margin-bottom:6px;"><strong>${escapeHtml(r.prodotto)}</strong><br><span style="color:var(--text-muted);">${escapeHtml(r.negozioMin)} ${fmt(r.prezzoMin)} · ultimo acquisto ${escapeHtml(r.negozioUltimo)} ${fmt(r.prezzoUltimo)} <span style="color:var(--warning);">(+${fmt(r.delta)})</span></span></div>`).join('')
+          : '<div class="empty-state" style="padding:8px;">Servono acquisti dello stesso prodotto in negozi diversi.</div>'}</div>
+    </div>`;
+}
+document.getElementById('analisi-periodo').addEventListener('change', renderAnalisiProdotti);
+
 function renderProdotti() {
+  renderAnalisiProdotti();
   const cats = new Set();
   Object.values(stato.storicoProdotti).forEach(p => cats.add(p.categoria));
   const sel = document.getElementById('filtro-categoria');
@@ -4727,12 +5367,12 @@ function disegnaTabellaProdotti() {
   }
   tbody.innerHTML = lista.map(p => `
     <tr>
-      <td>${escapeHtml(p.prodotto)}</td>
-      <td style="color: var(--text-muted);">${escapeHtml(p.categoria)}</td>
-      <td class="amount-cell">${p.volte}</td>
-      <td class="amount-cell">${fmt(p.spesaTotale)}</td>
-      <td class="amount-cell">${fmt(p.prezzoMedio)}</td>
-      <td class="amount-cell">${fmt(p.ultimoPrezzo)}</td>
+      <td data-label="Prodotto">${escapeHtml(p.prodotto)}</td>
+      <td data-label="Categoria" style="color: var(--text-muted);">${escapeHtml(p.categoria)}</td>
+      <td class="amount-cell" data-label="Volte">${p.volte}</td>
+      <td class="amount-cell" data-label="Spesa totale">${fmt(p.spesaTotale)}</td>
+      <td class="amount-cell" data-label="Prezzo medio">${fmt(p.prezzoMedio)}</td>
+      <td class="amount-cell" data-label="Ultimo prezzo">${fmt(p.ultimoPrezzo)}</td>
     </tr>
   `).join('');
 }
@@ -4816,7 +5456,8 @@ function renderCambioMese() {
   const budN = stato.macros.needs.budget;
   const budW = stato.macros.wants.budget;
   const budS = stato.macros.savings.budget;
-  const avanzoTot = Math.max(0, budN - sN) + Math.max(0, budW - sW) + Math.max(0, budS - sS);
+  const rp = stato.saldoRiportato || {};
+  const avanzoTot = round2(Math.max(0, budN + (rp.needs||0) - sN) + Math.max(0, budW + (rp.wants||0) - sW) + Math.max(0, budS + (rp.savings||0) - sS) + extraDaAssegnare(stato));
   const orfani = movimentiOrfani();
 
   const orfaniBox = orfani.length > 0
@@ -4826,7 +5467,7 @@ function renderCambioMese() {
   div.innerHTML = `
     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Mese in chiusura</div><strong style="font-family:var(--font-display); font-size:22px;">${escapeHtml(stato.meseCorrente)}</strong></div>
-      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Reddito mese</div><strong class="num" style="font-size:18px;">${fmt(stato.reddito)}</strong></div>
+      <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Reddito mese</div><strong class="num" style="font-size:18px;">${fmt(redditoTotale(stato))}</strong></div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Avanzo totale (perso)</div><strong class="num" style="font-size:18px; color:var(--text-muted);">${fmt(avanzoTot)}</strong></div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Needs spesi</div><strong class="num" style="font-size:18px;">${fmt(sN)}</strong> / ${fmt(budN)}</div>
       <div><div style="color:var(--text-dim); font-size:11px; letter-spacing:0.12em; text-transform:uppercase;">Wants spesi</div><strong class="num" style="font-size:18px;">${fmt(sW)}</strong> / ${fmt(budW)}</div>
@@ -4845,16 +5486,81 @@ function renderCambioMese() {
     tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nessun mese archiviato.</td></tr>';
   } else {
     tbody.innerHTML = stato.archivioMesi.map(m => `
-      <tr>
-        <td>${escapeHtml(m.mese)}</td>
-        <td class="amount-cell">${fmt(m.reddito||0)}</td>
-        <td class="amount-cell">${fmt(m.spesoNeeds||0)}</td>
-        <td class="amount-cell">${fmt(m.spesoWants||0)}</td>
-        <td class="amount-cell">${fmt(m.versatoSavings||0)}</td>
-        <td class="amount-cell" style="color:var(--text-muted);">${fmt(m.avanzoTotale||0)}</td>
+      <tr class="riga-mese" data-id="${escapeHtml(m.id)}" style="cursor:pointer;" tabindex="0">
+        <td data-label="Mese">${escapeHtml(m.mese)} <span style="color:var(--text-dim); font-size:11px;">· ${Number(m.nMovimenti || (m.movimenti||[]).length || 0) + Number(m.nScontrini || (m.scontrini||[]).length || 0)} reg.</span></td>
+        <td class="amount-cell" data-label="Reddito">${fmt(redditoMese(m))}</td>
+        <td class="amount-cell" data-label="Needs">${fmt(m.spesoNeeds||0)}</td>
+        <td class="amount-cell" data-label="Wants">${fmt(m.spesoWants||0)}</td>
+        <td class="amount-cell" data-label="Savings">${fmt(m.versatoSavings||0)}</td>
+        <td class="amount-cell" style="color:var(--text-muted);" data-label="Avanzo">${fmt(m.avanzoTotale||0)}</td>
       </tr>
     `).join('');
+    tbody.querySelectorAll('.riga-mese').forEach(r => {
+      const apri = () => apriDettaglioMese(r.dataset.id);
+      r.addEventListener('click', apri);
+      r.addEventListener('keydown', e => { if (e.key === 'Enter') apri(); });
+    });
   }
+  renderConfrontoMesi();
+}
+
+/* ---------- Dettaglio e confronto mesi archiviati ---------- */
+async function caricaDettaglioMese(id) {
+  const leggero = stato.archivioMesi.find(a => a.id === id);
+  if (!leggero) return null;
+  // Il dettaglio può essere ancora in localStorage (non migrato) o in IndexedDB.
+  if ((leggero.movimenti && leggero.movimenti.length) || (leggero.scontrini && leggero.scontrini.length)) return leggero;
+  if (Archivio.ok) {
+    const rec = await Archivio.leggi(id);
+    if (rec) return rec;
+  }
+  return { ...leggero, movimenti: [], scontrini: [], mancante: (leggero.nMovimenti || leggero.nScontrini) > 0 };
+}
+
+async function apriDettaglioMese(id) {
+  let m;
+  try { m = await caricaDettaglioMese(id); } catch (e) { toast('Lettura archivio non riuscita: ' + e.message, 'danger'); return; }
+  if (!m) return;
+  document.getElementById('mese-titolo').textContent = m.mese;
+  const righe = [
+    ...m.movimenti.map(x => ({ data: x.data, desc: x.descrizione || '—', cat: ((x.macro && MACRO_LABEL[x.macro]) || '') , importo: x.importo })),
+    ...m.scontrini.map(x => ({ data: x.data, desc: 'Scontrino ' + (x.negozio || ''), cat: 'Needs', importo: x.totale }))
+  ].sort((a, b) => String(a.data).localeCompare(String(b.data)));
+  document.getElementById('mese-corpo').innerHTML = `
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px;">
+      <div><div class="lbl" style="color:var(--text-dim); font-size:11px;">NEEDS</div><strong class="num">${fmt(m.spesoNeeds)}</strong></div>
+      <div><div class="lbl" style="color:var(--text-dim); font-size:11px;">WANTS</div><strong class="num">${fmt(m.spesoWants)}</strong></div>
+      <div><div class="lbl" style="color:var(--text-dim); font-size:11px;">SAVINGS</div><strong class="num">${fmt(m.versatoSavings)}</strong></div>
+    </div>
+    ${m.mancante ? '<div class="alert warning">Il dettaglio di questo mese non è presente su questo dispositivo (restano i totali). Importa un backup completo per recuperarlo.</div>' : ''}
+    ${righe.length ? `<div class="table-wrap"><table class="data"><tbody>${righe.map(r => `
+      <tr><td class="num">${fmtData(r.data)}</td><td>${escapeHtml(r.desc)}</td><td>${escapeHtml(r.cat)}</td><td class="amount-cell">${fmt(r.importo)}</td></tr>`).join('')}</tbody></table></div>`
+      : (m.mancante ? '' : '<div class="empty-state">Nessun movimento registrato.</div>')}`;
+  document.getElementById('modal-mese').classList.add('active');
+}
+document.getElementById('mese-chiudi').addEventListener('click', () => document.getElementById('modal-mese').classList.remove('active'));
+
+function renderConfrontoMesi() {
+  const box = document.getElementById('confronto-mesi');
+  if (!box) return;
+  const mesi = stato.archivioMesi;
+  box.style.display = mesi.length >= 2 ? 'block' : 'none';
+  if (mesi.length < 2) return;
+  const selA = document.getElementById('conf-a'), selB = document.getElementById('conf-b');
+  const opts = mesi.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.mese)}</option>`).join('');
+  const va = selA.value, vb = selB.value;
+  selA.innerHTML = opts; selB.innerHTML = opts;
+  selA.value = mesi.some(m => m.id === va) ? va : mesi[mesi.length - 2].id;
+  selB.value = mesi.some(m => m.id === vb) ? vb : mesi[mesi.length - 1].id;
+  const calcola = () => {
+    const a = mesi.find(m => m.id === selA.value), b = mesi.find(m => m.id === selB.value);
+    if (!a || !b) return;
+    document.getElementById('conf-risultato').innerHTML = `<div class="table-wrap"><table class="data compatta">
+      <thead><tr><th></th><th style="text-align:right;">${escapeHtml(a.mese)}</th><th style="text-align:right;">${escapeHtml(b.mese)}</th><th style="text-align:right;">Differenza</th></tr></thead>
+      <tbody>${confrontaMesi(a, b).map(r => `<tr><td data-label="Voce">${escapeHtml(r.nome)}</td><td class="amount-cell" data-label="${escapeHtml(a.mese)}">${fmt(r.a)}</td><td class="amount-cell" data-label="${escapeHtml(b.mese)}">${fmt(r.b)}</td>
+        <td class="amount-cell" data-label="Differenza">${r.delta > 0 ? '+' : ''}${fmt(r.delta)}${r.pct === null ? '' : ' (' + (r.pct > 0 ? '+' : '') + r.pct + '%)'}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+  selA.onchange = calcola; selB.onchange = calcola; calcola();
 }
 
 function aggiornaPreviewRicalibrazione() {
@@ -4904,25 +5610,30 @@ document.getElementById('btn-chiudi-mese').addEventListener('click', () => {
   }
   apriModal(
     'Chiudere il mese?',
-    `Chiudo ${stato.meseCorrente} e apro ${nuovoMese} con reddito ${fmt(nuovoReddito)}. Tutti i contatori vengono azzerati (no roll-over) e i budget ricalibrati dalle percentuali.`,
+    `Chiudo ${stato.meseCorrente} e apro ${nuovoMese} con reddito ${fmt(nuovoReddito)}. Tutti i contatori vengono azzerati (no roll-over) e i budget ricalibrati dalle percentuali.` + (extraDaAssegnare(stato) > 0 ? ` Hai ${fmt(extraDaAssegnare(stato))} di entrate extra non ripartite: finiranno nell'avanzo del mese.` : ''),
     () => proceedChiusura(nuovoMese, nuovoReddito)
   );
 });
 
 document.getElementById('nuovo-reddito').addEventListener('input', aggiornaPreviewRicalibrazione);
 
-/* Mesi archiviati più vecchi di ARCHIVIO_DETTAGLIO_MESI: si tengono solo i totali
-   (il dettaglio di movimenti/scontrini faceva crescere localStorage fino alla quota). */
-const ARCHIVIO_DETTAGLIO_MESI = 6;
-function compattaArchivio() {
-  const n = stato.archivioMesi.length;
-  stato.archivioMesi.forEach((a, i) => {
-    if (n - i > ARCHIVIO_DETTAGLIO_MESI && (a.movimenti?.length || a.scontrini?.length)) {
-      a.movimenti = [];
-      a.scontrini = [];
-      a.compattato = true;
-    }
-  });
+/* Sposta il dettaglio dei mesi chiusi da localStorage a IndexedDB.
+   Ordine sicuro: prima scrittura IndexedDB (transazione completata), poi si alleggerisce
+   localStorage. Se qualcosa fallisce il dettaglio resta dov'è: nessuna perdita. */
+async function alleggerisciArchivio() {
+  if (!Archivio.ok) return;
+  const { dettagli } = separaArchivio(stato);
+  if (!dettagli.length) return;
+  try {
+    await Archivio.salvaTutti(dettagli);
+  } catch (e) {
+    console.warn('Archivio IndexedDB non scrivibile:', e);
+    return;
+  }
+  const ids = new Set(dettagli.map(d => d.id));
+  stato.archivioMesi = stato.archivioMesi.map(a => ids.has(a.id) ? meseLeggero(a) : a);
+  salvaStato();
+  if (document.getElementById('view-cambio-mese')?.classList.contains('active')) renderCambioMese();
 }
 
 function proceedChiusura(nuovoMese, nuovoReddito) {
@@ -4932,35 +5643,42 @@ function proceedChiusura(nuovoMese, nuovoReddito) {
   const budN = stato.macros.needs.budget;
   const budW = stato.macros.wants.budget;
   const budS = stato.macros.savings.budget;
-  const avanzoTot =
-      Math.max(0, budN - sN)
-    + Math.max(0, budW - sW)
-    + Math.max(0, budS - sS);
+  const rp = stato.saldoRiportato || {};
+  const avanzoTot = round2(
+      Math.max(0, budN + (rp.needs||0) - sN)
+    + Math.max(0, budW + (rp.wants||0) - sW)
+    + Math.max(0, budS + (rp.savings||0) - sS)
+    + extraDaAssegnare(stato));
 
   stato.archivioMesi.push({
+    id: uid(),
     schemaVersion: SCHEMA_VERSION,
     mese: stato.meseCorrente,
     reddito: stato.reddito,
+    extraTot: totaleEntrateExtra(stato),
+    entrateExtra: stato.entrateExtra.slice(),
     spesoNeeds: sN,
     spesoWants: sW,
     versatoSavings: sS,
     avanzoTotale: avanzoTot,
     movimenti: stato.movimenti.slice(),
-    scontrini: stato.scontrini.slice()
+    scontrini: stato.scontrini.slice(),
+    righeProdotto: stato.righeProdotto.slice()
   });
-  compattaArchivio();
 
   // No roll-over: azzeramento completo
   stato.saldoRiportato = { needs: 0, wants: 0, savings: 0 };
   stato.movimenti = [];
   stato.scontrini = [];
   stato.righeProdotto = [];
+  stato.entrateExtra = [];
   stato.meseCorrente = nuovoMese;
 
   // Ricalibra budget macro+voci dal nuovo reddito
   recalibraDaPercentuali(nuovoReddito);
 
   salvaStato();
+  alleggerisciArchivio();
   toast(`Mese chiuso. Aperto ${nuovoMese} · reddito ${fmt(nuovoReddito)} · budget ricalibrati.`, 'success', 4500);
   document.getElementById('nuovo-mese').value = '';
   document.getElementById('nuovo-reddito').value = '';
@@ -5075,6 +5793,7 @@ document.getElementById('recon-applica').addEventListener('click', () => {
    IMPOSTAZIONI
    ============================================================ */
 function renderImpostazioni() {
+  renderIA();
   document.getElementById('reddito-input').value = stato.reddito;
   document.getElementById('mese-input').value = stato.meseCorrente;
   document.getElementById('app-version-label').textContent = APP_VERSION;
@@ -5175,6 +5894,63 @@ function renderImpostazioni() {
   }));
 }
 
+/* ---------- Impostazioni IA e casi di prova ---------- */
+async function renderIA() {
+  const c = configIA();
+  document.getElementById('ia-attivo').checked = c.attivo;
+  document.getElementById('ia-chiave').value = c.chiave;
+  document.getElementById('ia-modello').value = c.modello;
+  document.getElementById('ia-foto').checked = c.salvaFoto;
+  const st = document.getElementById('ia-stato');
+  st.style.color = 'var(--text-muted)';
+  st.textContent = c.attivo ? (c.chiave ? 'Gemini attivo.' : 'Attivo ma manca la chiave: verrà usato solo l\'OCR locale.') : 'Gemini non attivo: si usa solo l\'OCR locale.';
+  const info = document.getElementById('ia-casi-info');
+  if (!Archivio.ok) { info.textContent = 'Archivio non disponibile su questo browser: i casi di prova non possono essere salvati.'; return; }
+  try {
+    const casi = await Archivio.tuttiCasi();
+    const stat = statisticheOcr(casi);
+    info.textContent = casi.length
+      ? `${casi.length} casi salvati. ` + (stat.n ? `OCR locale sugli ultimi ${stat.n}: ${Math.round(stat.accuratezza * 100)}% di righe corrette, totale giusto nel ${Math.round(stat.totaleOk * 100)}% dei casi.` : 'Nessun caso con OCR locale da confrontare.')
+      : 'Nessun caso ancora: si accumulano salvando scontrini.';
+  } catch (e) { info.textContent = 'Lettura casi non riuscita: ' + e.message; }
+}
+document.getElementById('btn-ia-salva').addEventListener('click', () => {
+  const ok = salvaConfigIA({
+    attivo: document.getElementById('ia-attivo').checked,
+    chiave: document.getElementById('ia-chiave').value.trim(),
+    modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT,
+    salvaFoto: document.getElementById('ia-foto').checked
+  });
+  toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
+  renderIA();
+});
+document.getElementById('btn-ia-test').addEventListener('click', async () => {
+  const st = document.getElementById('ia-stato');
+  const ia = { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
+  if (ia.chiave.length < 10) { st.style.color = 'var(--danger)'; st.textContent = 'Inserisci prima la chiave API.'; return; }
+  st.style.color = 'var(--text-muted)'; st.textContent = 'Provo la connessione…';
+  try {
+    await chiamaGemini({ contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { temperature: 0, maxOutputTokens: 8 } }, ia, 20000);
+    st.style.color = 'var(--success)'; st.textContent = 'Connessione riuscita: chiave e modello funzionano. Ricorda di premere Salva.';
+  } catch (e) { st.style.color = 'var(--danger)'; st.textContent = 'Non funziona: ' + e.message + '.'; }
+});
+document.getElementById('btn-casi-export').addEventListener('click', async () => {
+  if (!Archivio.ok) { toast('Archivio non disponibile.', 'warning'); return; }
+  try {
+    const conFoto = document.getElementById('casi-con-foto').checked;
+    const casi = (await Archivio.tuttiCasi()).map(c => conFoto ? c : { ...c, foto: null });
+    if (!casi.length) { toast('Nessun caso da esportare.', 'info'); return; }
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    scaricaFile(`casi_scontrini_${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}.json`, JSON.stringify({ versione: 1, esportato: d.toISOString(), casi }, null, 2), 'application/json');
+    toast(casi.length + ' casi esportati' + (conFoto ? ' (con foto)' : '') + '.', 'success');
+  } catch (e) { toast('Esportazione non riuscita: ' + e.message, 'danger'); }
+});
+document.getElementById('btn-casi-svuota').addEventListener('click', () => {
+  apriModal('Eliminare i casi di prova?', 'Si perdono le statistiche di accuratezza dell\'OCR e i dati per migliorarlo. Gli scontrini registrati non vengono toccati.', async () => {
+    try { await Archivio.svuotaCasi(); toast('Casi eliminati.', 'info'); renderIA(); } catch (e) { toast('Operazione non riuscita: ' + e.message, 'danger'); }
+  });
+});
+
 document.getElementById('btn-salva-generali').addEventListener('click', () => {
   const r = parseFloat(document.getElementById('reddito-input').value);
   const m = document.getElementById('mese-input').value.trim();
@@ -5229,13 +6005,24 @@ document.getElementById('file-import').addEventListener('change', e => {
       apriModal(
         'Importare il backup?',
         'I dati attuali verranno sostituiti (ne viene tenuta una copia di sicurezza nel browser). Se è un backup nel vecchio formato (5 contenitori), verrà migrato automaticamente.',
-        () => {
+        async () => {
           let nuovo;
           try {
             nuovo = importaStato(dati);
           } catch (err) {
             toast('Backup non valido: ' + err.message, 'danger', 6000);
             return;
+          }
+          // Storico mesi: il dettaglio va in IndexedDB (con copia di sicurezza di quello attuale).
+          if (Archivio.ok) {
+            try {
+              const { leggero, dettagli } = separaArchivio(nuovo);
+              await Archivio.sostituisciConBackup(dettagli);
+              nuovo = leggero;
+            } catch (err) {
+              toast('Import annullato: archivio mesi non scrivibile (' + err.message + ').', 'danger', 7000);
+              return;
+            }
           }
           if (rilevaVecchioSchema(dati)) toast('Backup migrato dal vecchio formato.', 'info', 4000);
           // Copia di sicurezza dei dati attuali prima di sostituirli.
@@ -5261,7 +6048,8 @@ document.getElementById('btn-reset-tutto').addEventListener('click', () => {
   apriModal(
     'Reset totale?',
     'Cancella tutti i dati e riporta lo stato iniziale. Esporta un backup prima di procedere.',
-    () => {
+    async () => {
+      if (Archivio.ok) { try { await Archivio.svuota(); await Archivio.svuotaCasi(); } catch (e) { console.warn(e); } }
       stato = JSON.parse(JSON.stringify(STATO_DEFAULT));
       salvaStato();
       renderImpostazioni();
@@ -5274,17 +6062,55 @@ document.getElementById('btn-reset-tutto').addEventListener('click', () => {
 /* ============================================================
    EXPORT
    ============================================================ */
-function exportaJSON() {
-  const blob = JSON.stringify(stato, null, 2);
+/** Stato completo per il backup: ricompone il dettaglio dei mesi leggendo IndexedDB. */
+async function statoPerEsportazione() {
+  if (!Archivio.ok) return stato;
+  const completo = ricomponiArchivio(stato, await Archivio.tutti());
+  const mancanti = completo.archivioMesi.filter(a => (stato.archivioMesi.find(x => x.id === a.id)?.nMovimenti || 0) > 0 && !a.movimenti.length);
+  if (mancanti.length) toast(mancanti.length + ' mese/i senza dettaglio nell\'archivio: nel backup restano solo i totali.', 'warning', 6000);
+  return completo;
+}
+function nomeFileBackup() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
   const stamp = `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
-  const nome = `dati_${stamp}.json`; // pattern fisso: coperto da .gitignore e dal backup su Drive
-  scaricaFile(nome, blob, 'application/json');
+  return `dati_${stamp}.json`; // pattern fisso: coperto da .gitignore e dal backup su Drive
+}
+function backupFatto(nome) {
   setFileRiferimento(nome);
   try { localStorage.setItem(ULTIMO_BACKUP_KEY, String(Date.now())); } catch (_) {}
   renderPromemoriaBackup();
 }
+async function exportaJSON() {
+  let blob;
+  try { blob = JSON.stringify(await statoPerEsportazione(), null, 2); }
+  catch (e) { toast('Esportazione non riuscita: ' + e.message, 'danger'); return; }
+  const nome = nomeFileBackup();
+  scaricaFile(nome, blob, 'application/json');
+  backupFatto(nome);
+}
+/** Pannello di condivisione del telefono (Drive, File, iCloud); fallback al download. */
+async function condividiBackup() {
+  let blob;
+  try { blob = JSON.stringify(await statoPerEsportazione(), null, 2); }
+  catch (e) { toast('Esportazione non riuscita: ' + e.message, 'danger'); return; }
+  const nome = nomeFileBackup();
+  const file = new File([blob], nome, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Backup Tenuta Spese' });
+      backupFatto(nome);
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // annullato dall'utente
+      console.warn('share fallita, uso il download:', e);
+    }
+  }
+  scaricaFile(nome, blob, 'application/json');
+  backupFatto(nome);
+  toast('Condivisione non disponibile: file scaricato.', 'info');
+}
+document.getElementById('btn-condividi').addEventListener('click', condividiBackup);
 
 /* ============================================================
    FILE DI RIFERIMENTO
@@ -5355,6 +6181,8 @@ renderScontrino();
 renderDashboard();
 renderFileRiferimento();
 renderPromemoriaBackup();
+// Archivio mesi: apertura IndexedDB e migrazione del dettaglio ancora in localStorage.
+Archivio.init().then(ok => { if (ok) alleggerisciArchivio(); });
 if (avvisoAvvio) toast(avvisoAvvio, 'danger', 12000);
 </script>
 
