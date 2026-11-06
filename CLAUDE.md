@@ -20,7 +20,7 @@ Chart.js, chartjs-chart-treemap, Tesseract.js e pdf.js arrivano da jsDelivr con 
 ## Avvio/test
 
 - Nessun build: apri `index.html` nel browser oppure `python3 -m http.server`.
-- Test: `node --test tests/` (o `npm test`).
+- Test: `node --test` (o `npm test`).
 - Rigenerare le icone: `python3 gen_icons.py`.
 
 ## Convenzioni

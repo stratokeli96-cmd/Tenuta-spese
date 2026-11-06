@@ -8,7 +8,7 @@
  * Nessun dato utente passa di qui: localStorage resta sul dispositivo.
  */
 
-// Deve essere IDENTICA a APP_VERSION in index.html (lo verifica `node --test tests/`).
+// Deve essere IDENTICA a APP_VERSION in index.html (lo verifica `node --test`).
 // Cambia ad ogni release e forza l'eliminazione della shell cache precedente.
 const CACHE_VERSION = '2026.11.06a';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;

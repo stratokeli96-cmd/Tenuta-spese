@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 22
       - name: Test (logica, versioni, SRI, escape)
-        run: node --test tests/
+        run: node --test
 
   deploy:
     needs: test
