@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Tenuta Spese · Dashboard</title>
 
 <!-- PWA / iOS standalone -->
@@ -18,10 +18,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@2.3.1"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https: data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<!-- Librerie da CDN con Subresource Integrity (hash calcolati sui file npm esatti). Se si cambia versione, rigenerare l'hash. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js" integrity="sha384-FcQlsUOd0TJjROrBxhJdUhXTUgNJQxTMcxZe6nHbaEfFL1zjQ+bq/uRoBQxb0KMo" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@2.3.1/dist/chartjs-chart-treemap.min.js" integrity="sha384-2iT6D7wyb5HstzKoC271/lYvvVhEpI0dyfsa2DVm2Hme4y8BhFIT/HpobnLcCgDf" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js" integrity="sha384-Ptw8HCYAWF6vIop6WuGxfSCiDCIzUWqjrHYfx8Vd0S4CMBaicAdBh2y+Ufle664A" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
+<script src="logic.js"></script>
 
 <style>
 /* ============================================================
@@ -1606,6 +1609,7 @@ html, body { overflow-x: hidden; }
 
     <!-- ====== VIEW: DASHBOARD ====== -->
     <section class="view active" id="view-dashboard">
+      <div id="backup-reminder" class="alert warning" style="display:none; margin-bottom: var(--sp-md);" role="status"></div>
       <div class="page-header">
         <div>
           <h1 class="page-title">Dashboard</h1>
@@ -2055,7 +2059,7 @@ html, body { overflow-x: hidden; }
 </div>
 
 <!-- ===== MODAL: Quick Add ===== -->
-<div class="modal-backdrop" id="modal-quickadd">
+<div class="modal-backdrop" id="modal-quickadd" role="dialog" aria-modal="true">
   <div class="modal">
     <h3>Nuova spesa</h3>
     <p style="color: var(--text-muted); font-size: 12px; margin-bottom: var(--sp-md);">
@@ -2099,7 +2103,7 @@ html, body { overflow-x: hidden; }
 </div>
 
 <!-- ===== MODAL: Conferma generica ===== -->
-<div class="modal-backdrop" id="modal-confirm">
+<div class="modal-backdrop" id="modal-confirm" role="dialog" aria-modal="true">
   <div class="modal">
     <h3 id="modal-titolo">Conferma</h3>
     <p id="modal-testo" style="color: var(--text-muted); margin-bottom: 20px;"></p>
@@ -2111,7 +2115,7 @@ html, body { overflow-x: hidden; }
 </div>
 
 <!-- ===== MODAL: Reconciliation orphans ===== -->
-<div class="modal-backdrop" id="modal-recon">
+<div class="modal-backdrop" id="modal-recon" role="dialog" aria-modal="true">
   <div class="modal wide">
     <h3>Spese da riconciliare</h3>
     <p style="color: var(--text-muted); margin-bottom: var(--sp-md);">
@@ -2142,8 +2146,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.08.29h';
-const APP_BUILD_NOTE = 'Scontrino: solo caricamento file da scansione iPhone + verifica totale prima del salvataggio';
+const APP_VERSION = '2026.11.06a';
+const APP_BUILD_NOTE = 'Revisione tecnica: import validato, date locali, importi al centesimo, SRI sui CDN, cache offline più robusta, promemoria backup';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -2151,155 +2155,51 @@ const APP_BUILD_NOTE = 'Scontrino: solo caricamento file da scansione iPhone + v
 const STORAGE_KEY      = 'smartFinance_v1';
 const STORAGE_KEY_OLD  = 'pianoMensile_v1';
 
-const VOCI_NEEDS_DEFAULT = [
-  { id:'alimentari',  nome:'Alimentari',                budget:258 },
-  { id:'utenze',      nome:'Utenze (luce/gas/acqua)',   budget:139 },
-  { id:'telefonia',   nome:'Telefonia + internet',      budget:37  },
-  { id:'carburante',  nome:'Carburante motorino',       budget:30  },
-  { id:'farmacia',    nome:'Farmacia ricorrente',       budget:5   },
-  { id:'moto',        nome:'Moto: RCA + bollo + manut.',budget:35  },
-  { id:'tari',        nome:'TARI',                      budget:7   },
-  { id:'sanitarie',   nome:'Sanitarie irregolari',      budget:16  },
-  { id:'buffer',      nome:'Buffer / imprevisti',       budget:22  }
-];
-const VOCI_WANTS_DEFAULT = [
-  { id:'ristorazione',  nome:'Ristorazione e vita sociale', budget:200 },
-  { id:'online',        nome:'Online (acquisti <100)',      budget:45  },
-  { id:'contanti',      nome:'Contanti (barbiere + extra)', budget:35  },
-  { id:'bar',           nome:'Bar e caffetterie',           budget:22  },
-  { id:'sport',         nome:'Sport / hobby',               budget:14  },
-  { id:'abbonamenti',   nome:'Abbonamenti digitali',        budget:12  },
-  { id:'altro-wants',   nome:'Altro / imprevisti Wants',    budget:6   },
-  { id:'viaggi',        nome:'Viaggi e weekend',            budget:94  },
-  { id:'abbigliamento', nome:'Abbigliamento (stagionale)',  budget:65  }
-];
-const VOCI_SAVINGS_DEFAULT = [
-  { id:'tr-fisso',  nome:'Versamento fisso (Trade Republic)', budget:150 }
-];
+/* Default, migrazione, validazione e calcoli puri: vedi logic.js */
 
-const STATO_DEFAULT = {
-  meseCorrente: 'Mag 2026',
-  reddito: 1192,
-  macros: {
-    needs:   { id:'needs',   nome:'Needs',   budget:549, voci: JSON.parse(JSON.stringify(VOCI_NEEDS_DEFAULT))   },
-    wants:   { id:'wants',   nome:'Wants',   budget:493, voci: JSON.parse(JSON.stringify(VOCI_WANTS_DEFAULT))   },
-    savings: { id:'savings', nome:'Savings', budget:150, voci: JSON.parse(JSON.stringify(VOCI_SAVINGS_DEFAULT)) }
-  },
-  movimenti: [],
-  scontrini: [],
-  righeProdotto: [],
-  storicoProdotti: {},
-  archivioMesi: [],
-  saldoRiportato: { needs:0, wants:0, savings:0 }
-};
-
-const VECCHIO_TO_MACRO = {
-  'needs-correnti':   'needs',
-  'cuscinetto-needs': 'needs',
-  'carta-wants':      'wants',
-  'cuscinetto-wants': 'wants',
-  'trade-republic':   'savings'
-};
-
-function rilevaVecchioSchema(obj) {
-  return obj && obj.contenitori && obj.contenitori['needs-correnti'];
-}
-
-function migraDaVecchioSchema(vecchio) {
-  const out = JSON.parse(JSON.stringify(STATO_DEFAULT));
-  out.meseCorrente = vecchio.meseCorrente || out.meseCorrente;
-  out.reddito = vecchio.reddito ?? out.reddito;
-
-  const sommaBudget = { needs:0, wants:0, savings:0 };
-  const vociPerMacro = { needs:[], wants:[], savings:[] };
-  const seenIds = { needs:new Set(), wants:new Set(), savings:new Set() };
-
-  Object.values(vecchio.contenitori || {}).forEach(c => {
-    const macro = VECCHIO_TO_MACRO[c.id];
-    if (!macro) return;
-    sommaBudget[macro] += Number(c.budget) || 0;
-    (c.voci || []).forEach(v => {
-      if (!seenIds[macro].has(v.id)) {
-        seenIds[macro].add(v.id);
-        vociPerMacro[macro].push({ id:v.id, nome:v.nome, budget:Number(v.budget)||0 });
-      }
-    });
-  });
-
-  ['needs','wants','savings'].forEach(m => {
-    out.macros[m].budget = sommaBudget[m] || out.macros[m].budget;
-    if (vociPerMacro[m].length) out.macros[m].voci = vociPerMacro[m];
-  });
-
-  out.movimenti = (vecchio.movimenti || []).map(m => ({
-    id: m.id,
-    data: m.data,
-    macro: VECCHIO_TO_MACRO[m.contenitore] || 'needs',
-    voce: m.voce,
-    importo: Number(m.importo) || 0,
-    descrizione: m.descrizione || '',
-    origine: m.origine || 'manuale'
-  }));
-
-  (vecchio.versamentiTR || []).forEach(v => {
-    out.movimenti.push({
-      id: v.id,
-      data: v.data,
-      macro: 'savings',
-      voce: 'tr-fisso',
-      importo: Number(v.importo) || 0,
-      descrizione: v.tipo || 'Versamento Trade Republic',
-      origine: 'manuale'
-    });
-  });
-
-  out.scontrini = (vecchio.scontrini || []).map(s => ({ ...s, origine:'manuale' }));
-  out.righeProdotto = vecchio.righeProdotto || [];
-  out.storicoProdotti = vecchio.storicoProdotti || {};
-
-  const sr = vecchio.saldoRiportato || {};
-  out.saldoRiportato = {
-    needs:   (Number(sr['needs-correnti'])||0) + (Number(sr['cuscinetto-needs'])||0),
-    wants:   (Number(sr['cuscinetto-wants'])||0),
-    savings: (Number(sr['trade-republic'])||0)
-  };
-
-  out.archivioMesi = (vecchio.archivioMesi || []).map(m => ({
-    mese: m.mese,
-    spesoNeeds:   (Number(m.spesoNeedsCorrenti)||0) + (Number(m.spesoCuscinettoNeeds)||0),
-    spesoWants:   (Number(m.spesoCartaWants)||0)    + (Number(m.spesoCuscinettoWants)||0),
-    versatoSavings: Number(m.versatoTR)||0,
-    avanzoVerso: Number(m.avanzoWants)||0
-  }));
-
-  return out;
-}
-
+let avvisoAvvio = null;
 function caricaStato() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return Object.assign({}, JSON.parse(JSON.stringify(STATO_DEFAULT)), parsed);
-    }
+    raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return validaStato(JSON.parse(raw));
     const rawOld = localStorage.getItem(STORAGE_KEY_OLD);
     if (rawOld) {
       const vecchio = JSON.parse(rawOld);
       if (rilevaVecchioSchema(vecchio)) {
-        const migrato = migraDaVecchioSchema(vecchio);
+        const migrato = validaStato(migraDaVecchioSchema(vecchio));
         localStorage.setItem(STORAGE_KEY, JSON.stringify(migrato));
         return migrato;
       }
     }
   } catch(e) {
     console.error('caricaStato:', e);
+    // Dati illeggibili: non vanno sovrascritti in silenzio al primo salvataggio.
+    if (raw) {
+      const chiave = STORAGE_KEY + '_corrotto_' + Date.now();
+      try {
+        localStorage.setItem(chiave, raw);
+        avvisoAvvio = 'Dati non leggibili (' + e.message + '). Copia conservata in "' + chiave + '"; riparto da zero.';
+      } catch (_) {
+        avvisoAvvio = 'Dati non leggibili (' + e.message + ') e copia di sicurezza non riuscita.';
+      }
+    }
   }
-  return JSON.parse(JSON.stringify(STATO_DEFAULT));
+  return copiaProfonda(STATO_DEFAULT);
 }
 
+let ultimoErroreSalvataggio = 0;
 function salvaStato() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stato)); }
-  catch(e) { toast('Errore salvataggio: '+e.message, 'danger'); }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stato)); return true; }
+  catch(e) {
+    // Quota piena o storage bloccato: i dati restano SOLO in memoria. Avvisa con forza.
+    const ora = Date.now();
+    if (ora - ultimoErroreSalvataggio > 5000) {
+      ultimoErroreSalvataggio = ora;
+      toast('ATTENZIONE: salvataggio fallito (' + e.message + '). Esporta subito un backup JSON.', 'danger', 9000);
+    }
+    return false;
+  }
 }
 
 let stato = caricaStato();
@@ -2365,12 +2265,6 @@ const fmtData = (iso) => {
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
 };
-const oggi = () => new Date().toISOString().slice(0,10);
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-function escapeHtml(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
 const MACRO_COLOR = { needs: '#67e8f9', wants: '#3b82f6', savings: '#818cf8' };
 const MACRO_LABEL = { needs: 'Needs', wants: 'Wants', savings: 'Savings' };
 
@@ -2445,35 +2339,11 @@ document.getElementById('modal-conferma').addEventListener('click', () => {
 /* ============================================================
    CALCOLI
    ============================================================ */
-function isVoceValida(macroId, voceId) {
-  const m = stato.macros[macroId];
-  if (!m) return false;
-  return m.voci.some(v => v.id === voceId);
-}
-function isOrfano(mov) {
-  return !mov.macro || !stato.macros[mov.macro] || !isVoceValida(mov.macro, mov.voce);
-}
-function movimentiOrfani() {
-  return stato.movimenti.filter(isOrfano);
-}
-function spesoMacro(macroId) {
-  let s = stato.movimenti
-    .filter(m => m.macro === macroId && !isOrfano(m))
-    .reduce((acc, m) => acc + Number(m.importo), 0);
-  if (macroId === 'needs') {
-    s += stato.scontrini.reduce((acc, sc) => acc + Number(sc.totale), 0);
-  }
-  return s;
-}
-function spesoVoce(macroId, voceId) {
-  let s = stato.movimenti
-    .filter(m => m.macro === macroId && m.voce === voceId)
-    .reduce((acc, m) => acc + Number(m.importo), 0);
-  if (macroId === 'needs' && voceId === 'alimentari') {
-    s += stato.scontrini.reduce((acc, sc) => acc + Number(sc.totale), 0);
-  }
-  return s;
-}
+const isVoceValida = (macroId, voceId) => stIsVoceValida(stato, macroId, voceId);
+const isOrfano = (mov) => stIsOrfano(stato, mov);
+function movimentiOrfani() { return stato.movimenti.filter(isOrfano); }
+const spesoMacro = (macroId) => stSpesoMacro(stato, macroId);
+const spesoVoce = (macroId, voceId) => stSpesoVoce(stato, macroId, voceId);
 function saldoMacro(macroId) {
   const m = stato.macros[macroId];
   const riporto = stato.saldoRiportato[macroId] || 0;
@@ -2638,7 +2508,7 @@ function renderQuickAddVoci() {
   // se la voce attiva non esiste nella macro, resetta
   if (qaState.voce && !m.voci.some(v => v.id === qaState.voce)) qaState.voce = null;
   wrap.innerHTML = m.voci.map(v =>
-    `<button class="voci-chip ${qaState.voce === v.id ? 'active' : ''}" data-voce="${v.id}">${escapeHtml(v.nome)}</button>`
+    `<button class="voci-chip ${qaState.voce === v.id ? 'active' : ''}" data-voce="${escapeHtml(v.id)}">${escapeHtml(v.nome)}</button>`
   ).join('');
   wrap.querySelectorAll('.voci-chip').forEach(c => {
     c.addEventListener('click', () => {
@@ -2677,15 +2547,20 @@ document.getElementById('qa-save').addEventListener('click', () => {
     toast('Seleziona una voce.', 'warning');
     return;
   }
-  if (qaState.macro === 'needs' && qaState.voce === 'alimentari') {
-    if (!confirm('Stai registrando una spesa Alimentari come singola. Per gli scontrini è meglio usare il modulo OCR. Procedere comunque?')) return;
+  if (qaState.macro === 'needs' && qaState.voce === VOCE_SCONTRINI) {
+    apriModal('Spesa Alimentari singola?', 'Per gli scontrini è meglio usare il modulo OCR. Registrare comunque questa spesa?', () => registraMovimentoQuickAdd(importo, data, desc));
+    return;
   }
+  registraMovimentoQuickAdd(importo, data, desc);
+});
+
+function registraMovimentoQuickAdd(importo, data, desc) {
   stato.movimenti.push({
     id: uid(),
     data,
     macro: qaState.macro,
     voce: qaState.voce,
-    importo,
+    importo: round2(importo),
     descrizione: desc,
     origine: 'manuale'
   });
@@ -2696,7 +2571,7 @@ document.getElementById('qa-save').addEventListener('click', () => {
   const activeView = document.querySelector('.nav-item.active')?.dataset.view;
   const fn = VIEW_RENDERERS[activeView];
   if (fn) fn();
-});
+}
 
 // shortcut tastiera: N per nuova spesa (se non in input)
 document.addEventListener('keydown', e => {
@@ -2786,7 +2661,7 @@ function renderMacrosRow() {
     card.className = 'macro-card ' + id;
     card.innerHTML = `
       <div class="head">
-        <div class="name"><span class="dot"></span>${m.nome}</div>
+        <div class="name"><span class="dot"></span>${escapeHtml(m.nome)}</div>
         <div class="pct">${Math.round(pct)}%</div>
       </div>
       <div class="amount num">${fmt(saldo)}</div>
@@ -2863,8 +2738,15 @@ function renderSparkline(macroId) {
   ctx.fill();
 }
 
+function grafici() {
+  if (typeof Chart !== 'undefined') return true;
+  console.warn('Chart.js non disponibile (CDN non raggiunto): grafici disattivati.');
+  return false;
+}
+
 function renderDonut() {
   const ctx = document.getElementById('chart-donut');
+  if (!ctx || !grafici()) return;
   if (chartDonut) chartDonut.destroy();
 
   const center = {
@@ -2990,7 +2872,7 @@ function renderUltimeTx() {
       <div>
         <div class="tx-desc">
           ${escapeHtml(t.desc || '—')}
-          <span class="badge ${t.orfano ? 'orphan' : t.macroId}">${t.orfano ? 'Orfano' : (MACRO_LABEL[t.macroId]||'')}</span>
+          <span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macroId)}">${t.orfano ? 'Orfano' : (MACRO_LABEL[t.macroId]||'')}</span>
           ${t.origine === 'ocr' ? '<span class="badge ocr">OCR</span>' : ''}
         </div>
         <div class="tx-voce">${escapeHtml(t.voce)}</div>
@@ -3001,6 +2883,7 @@ function renderUltimeTx() {
 }
 
 function renderChartAndamento() {
+  if (!grafici()) return;
   if (chartAndamento) { try { chartAndamento.destroy(); } catch(e){} chartAndamento = null; }
   let ctx = document.getElementById('chart-andamento');
   const wrap = ctx ? ctx.parentElement : null;
@@ -3038,6 +2921,7 @@ function renderChartAndamento() {
 }
 
 function renderTopVoci() {
+  if (!grafici()) return;
   if (chartTopVoci) { try { chartTopVoci.destroy(); } catch(e){} chartTopVoci = null; }
   let ctx = document.getElementById('chart-top-voci');
   const wrap = ctx ? ctx.parentElement : null;
@@ -3165,13 +3049,13 @@ function renderMacroPage(macroId) {
       <div>
         <h1 class="page-title" style="display:flex; align-items:center; gap:14px;">
           <span style="width:14px; height:14px; border-radius:50%; background:${MACRO_COLOR[macroId]}; display:inline-block;"></span>
-          ${m.nome}
+          ${escapeHtml(m.nome)}
         </h1>
         <p class="page-subtitle">${macroId === 'needs' ? 'Spese essenziali. Il taglio del reddito non le tocca.' :
           macroId === 'wants' ? 'Spese discrezionali. Stile di vita.' :
           'Capitale di accumulo. Investimenti, fondo emergenza, obiettivi.'}</p>
       </div>
-      <button class="btn btn-primary" data-quickadd-macro="${macroId}">+ Nuova spesa ${m.nome}</button>
+      <button class="btn btn-primary" data-quickadd-macro="${macroId}">+ Nuova spesa ${escapeHtml(m.nome)}</button>
     </div>
 
     <div class="macro-header">
@@ -3229,7 +3113,7 @@ function renderMacroPage(macroId) {
                       <span class="num" style="font-size:11px; color:var(--text-muted); min-width:36px; text-align:right;">${Math.round(p)}%</span>
                     </div>
                   </td>
-                  <td><button class="btn-ghost btn-quickadd-voce" data-macro="${macroId}" data-voce="${v.id}" style="padding:4px 8px; font-size:11px;">+</button></td>
+                  <td><button class="btn-ghost btn-quickadd-voce" data-macro="${escapeHtml(macroId)}" data-voce="${escapeHtml(v.id)}" style="padding:4px 8px; font-size:11px;">+</button></td>
                 </tr>
               `;
             }).join('')}
@@ -3292,7 +3176,7 @@ function drawGauge(canvasId, pct, color) {
 
 function drawTreemap(canvasId, macroId) {
   const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
+  if (!ctx || !grafici()) return;
   if (treemapChart) { try { treemapChart.destroy(); } catch(e){} }
   const m = stato.macros[macroId];
   const data = m.voci
@@ -4294,7 +4178,6 @@ function applicaSconto(riga, importo) {
   riga.prezzo = round2(Math.max(0, (riga.prezzoLordo || riga.prezzo) - riga.sconto));
   riga.prezzoFinale = riga.prezzo;
 }
-function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
 function capitalize(s) {
   return s.toLowerCase().split(/\s+/).map(w => w.length ? w[0].toUpperCase()+w.slice(1) : w).join(' ').trim();
@@ -4668,7 +4551,7 @@ function popolaFiltroVoci() {
   sel.innerHTML = '<option value="">Tutte</option>';
   if (macro && stato.macros[macro]) {
     stato.macros[macro].voci.forEach(v => {
-      sel.innerHTML += `<option value="${v.id}">${escapeHtml(v.nome)}</option>`;
+      sel.innerHTML += `<option value="${escapeHtml(v.id)}">${escapeHtml(v.nome)}</option>`;
     });
   }
 }
@@ -4731,12 +4614,12 @@ function applicaFiltri() {
   tbody.innerHTML = filtrate.map(t => `
     <tr>
       <td class="num">${fmtData(t.data)}</td>
-      <td><span class="badge ${t.orfano ? 'orphan' : t.macro}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
+      <td><span class="badge ${t.orfano ? 'orphan' : escapeHtml(t.macro)}">${t.orfano ? 'Orfano' : escapeHtml(t.macroNome)}</span></td>
       <td>${escapeHtml(t.voceNome)}</td>
       <td>${escapeHtml(t.descrizione)}</td>
       <td><span class="badge ${t.origine === 'ocr' ? 'ocr' : 'manual'}">${t.origine === 'ocr' ? 'OCR' : 'manuale'}</span></td>
       <td class="amount-cell">${fmt(t.importo)}</td>
-      <td><button class="btn-icon-danger" data-id="${t.id}" data-tipo="${t.tipo}">elimina</button></td>
+      <td><button class="btn-icon-danger" data-id="${escapeHtml(t.id)}" data-tipo="${escapeHtml(t.tipo)}">elimina</button></td>
     </tr>
   `).join('');
 
@@ -4761,7 +4644,7 @@ function confermaEliminazione(id, tipo) {
           const s = stato.storicoProdotti[key];
           if (s) {
             s.volte -= 1;
-            s.spesaTotale -= r.prezzo;
+            s.spesaTotale = round2(s.spesaTotale - r.prezzo);
             if (s.volte <= 0) delete stato.storicoProdotti[key];
           }
         });
@@ -4776,20 +4659,20 @@ function confermaEliminazione(id, tipo) {
 }
 
 document.getElementById('btn-export-csv').addEventListener('click', exportaCSV);
-document.getElementById('btn-export-json').addEventListener('click', () => exportaJSON('transazioni'));
+document.getElementById('btn-export-json').addEventListener('click', () => exportaJSON());
 
 function exportaCSV() {
   const rows = [['Data','Macro','Voce','Descrizione','Origine','Importo']];
   stato.movimenti.forEach(m => {
     const macro = stato.macros[m.macro];
     const v = macro?.voci.find(v => v.id === m.voce);
-    rows.push([m.data, macro?.nome||'', v?.nome||'', m.descrizione||'', m.origine||'manuale', m.importo.toFixed(2).replace('.',',')]);
+    rows.push([m.data, macro?.nome||'', v?.nome||'', m.descrizione||'', m.origine||'manuale', Number(m.importo).toFixed(2).replace('.',',')]);
   });
   stato.scontrini.forEach(s => {
-    rows.push([s.data, 'Needs', 'Alimentari', 'Scontrino ' + s.negozio, s.origine||'manuale', s.totale.toFixed(2).replace('.',',')]);
+    rows.push([s.data, 'Needs', 'Alimentari', 'Scontrino ' + s.negozio, s.origine||'manuale', Number(s.totale).toFixed(2).replace('.',',')]);
   });
-  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
-  scaricaFile('transazioni_' + stato.meseCorrente.replace(' ','_') + '.csv', csv, 'text/csv;charset=utf-8');
+  const csv = '\uFEFF' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
+  scaricaFile('transazioni_' + stato.meseCorrente.replace(/[^\w-]+/g,'_') + '.csv', csv, 'text/csv;charset=utf-8');
 }
 
 /* ============================================================
@@ -4855,6 +4738,7 @@ function disegnaTabellaProdotti() {
 }
 
 function disegnaPareto() {
+  if (!grafici()) return;
   if (chartPareto) { try { chartPareto.destroy(); } catch(e){} chartPareto = null; }
   let ctx = document.getElementById('chart-pareto');
   const wrap = ctx ? ctx.parentElement : null;
@@ -5002,6 +4886,11 @@ document.getElementById('btn-chiudi-mese').addEventListener('click', () => {
     toast('Inserisci il nome del nuovo mese.', 'warning');
     return;
   }
+  const norm = t => t.trim().toLowerCase();
+  if (norm(nuovoMese) === norm(stato.meseCorrente) || stato.archivioMesi.some(a => norm(a.mese) === norm(nuovoMese))) {
+    toast('Esiste già un mese chiamato "' + nuovoMese + '": scegli un nome diverso.', 'warning', 4500);
+    return;
+  }
   if (!isFinite(nuovoReddito) || nuovoReddito <= 0) {
     toast('Inserisci il nuovo reddito mensile.', 'warning');
     return;
@@ -5022,6 +4911,20 @@ document.getElementById('btn-chiudi-mese').addEventListener('click', () => {
 
 document.getElementById('nuovo-reddito').addEventListener('input', aggiornaPreviewRicalibrazione);
 
+/* Mesi archiviati più vecchi di ARCHIVIO_DETTAGLIO_MESI: si tengono solo i totali
+   (il dettaglio di movimenti/scontrini faceva crescere localStorage fino alla quota). */
+const ARCHIVIO_DETTAGLIO_MESI = 6;
+function compattaArchivio() {
+  const n = stato.archivioMesi.length;
+  stato.archivioMesi.forEach((a, i) => {
+    if (n - i > ARCHIVIO_DETTAGLIO_MESI && (a.movimenti?.length || a.scontrini?.length)) {
+      a.movimenti = [];
+      a.scontrini = [];
+      a.compattato = true;
+    }
+  });
+}
+
 function proceedChiusura(nuovoMese, nuovoReddito) {
   const sN = spesoMacro('needs');
   const sW = spesoMacro('wants');
@@ -5035,6 +4938,7 @@ function proceedChiusura(nuovoMese, nuovoReddito) {
     + Math.max(0, budS - sS);
 
   stato.archivioMesi.push({
+    schemaVersion: SCHEMA_VERSION,
     mese: stato.meseCorrente,
     reddito: stato.reddito,
     spesoNeeds: sN,
@@ -5044,6 +4948,7 @@ function proceedChiusura(nuovoMese, nuovoReddito) {
     movimenti: stato.movimenti.slice(),
     scontrini: stato.scontrini.slice()
   });
+  compattaArchivio();
 
   // No roll-over: azzeramento completo
   stato.saldoRiportato = { needs: 0, wants: 0, savings: 0 };
@@ -5081,7 +4986,7 @@ function renderReconList() {
   const wrap = document.getElementById('orphan-list');
   wrap.innerHTML = reconState.orphans.map(o => {
     const macroSel = `
-      <select data-id="${o.id}" data-field="macro">
+      <select data-id="${escapeHtml(o.id)}" data-field="macro">
         <option value="">— macro —</option>
         ${['needs','wants','savings'].map(id => `<option value="${id}" ${reconState.assignments[o.id]?.macro===id?'selected':''}>${MACRO_LABEL[id]}</option>`).join('')}
       </select>
@@ -5089,9 +4994,9 @@ function renderReconList() {
     const currentMacro = reconState.assignments[o.id]?.macro;
     const voci = currentMacro ? stato.macros[currentMacro].voci : [];
     const voceSel = `
-      <select data-id="${o.id}" data-field="voce" ${!currentMacro?'disabled':''}>
+      <select data-id="${escapeHtml(o.id)}" data-field="voce" ${!currentMacro?'disabled':''}>
         <option value="">— voce / nuova —</option>
-        ${voci.map(v => `<option value="${v.id}" ${reconState.assignments[o.id]?.voce===v.id?'selected':''}>${escapeHtml(v.nome)}</option>`).join('')}
+        ${voci.map(v => `<option value="${escapeHtml(v.id)}" ${reconState.assignments[o.id]?.voce===v.id?'selected':''}>${escapeHtml(v.nome)}</option>`).join('')}
         ${currentMacro ? '<option value="__new__">+ Crea nuova voce</option>' : ''}
       </select>
     `;
@@ -5239,6 +5144,10 @@ function renderImpostazioni() {
   ve.querySelectorAll('.voce-del').forEach(btn => btn.addEventListener('click', () => {
     const mid = btn.dataset.mid;
     const idx = parseInt(btn.dataset.idx);
+    if (mid === 'needs' && stato.macros.needs.voci[idx]?.id === VOCE_SCONTRINI) {
+      toast('La voce Alimentari riceve gli scontrini e non può essere eliminata (puoi rinominarla).', 'warning', 5000);
+      return;
+    }
     apriModal('Eliminare la voce?', 'I movimenti che la usavano resteranno ma diventeranno orfani (riassegnabili al prossimo cambio mese).', () => {
       stato.macros[mid].voci.splice(idx, 1);
       salvaStato();
@@ -5307,7 +5216,7 @@ document.getElementById('btn-preset-503020').addEventListener('click', () => {
   );
 });
 
-document.getElementById('btn-backup').addEventListener('click', () => exportaJSON('backup'));
+document.getElementById('btn-backup').addEventListener('click', () => exportaJSON());
 
 document.getElementById('file-import').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -5316,17 +5225,21 @@ document.getElementById('file-import').addEventListener('change', e => {
   reader.onload = ev => {
     try {
       const dati = JSON.parse(ev.target.result);
+      importaStato(dati); // validazione anticipata: errori subito, prima della conferma
       apriModal(
         'Importare il backup?',
-        'I dati attuali verranno sostituiti. Se è un backup nel vecchio formato (5 contenitori), verrà migrato automaticamente.',
+        'I dati attuali verranno sostituiti (ne viene tenuta una copia di sicurezza nel browser). Se è un backup nel vecchio formato (5 contenitori), verrà migrato automaticamente.',
         () => {
           let nuovo;
-          if (rilevaVecchioSchema(dati)) {
-            nuovo = migraDaVecchioSchema(dati);
-            toast('Backup migrato dal vecchio formato.', 'info', 4000);
-          } else {
-            nuovo = Object.assign({}, JSON.parse(JSON.stringify(STATO_DEFAULT)), dati);
+          try {
+            nuovo = importaStato(dati);
+          } catch (err) {
+            toast('Backup non valido: ' + err.message, 'danger', 6000);
+            return;
           }
+          if (rilevaVecchioSchema(dati)) toast('Backup migrato dal vecchio formato.', 'info', 4000);
+          // Copia di sicurezza dei dati attuali prima di sostituirli.
+          try { localStorage.setItem(STORAGE_KEY + '_prima_import', JSON.stringify(stato)); } catch (_) {}
           stato = nuovo;
           ensureQuotePct();
           salvaStato();
@@ -5361,14 +5274,16 @@ document.getElementById('btn-reset-tutto').addEventListener('click', () => {
 /* ============================================================
    EXPORT
    ============================================================ */
-function exportaJSON(prefisso) {
+function exportaJSON() {
   const blob = JSON.stringify(stato, null, 2);
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
   const stamp = `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
-  const nome = `dati_${stamp}.json`;
+  const nome = `dati_${stamp}.json`; // pattern fisso: coperto da .gitignore e dal backup su Drive
   scaricaFile(nome, blob, 'application/json');
   setFileRiferimento(nome);
+  try { localStorage.setItem(ULTIMO_BACKUP_KEY, String(Date.now())); } catch (_) {}
+  renderPromemoriaBackup();
 }
 
 /* ============================================================
@@ -5410,9 +5325,37 @@ function scaricaFile(nome, contenuto, mime) {
 /* ============================================================
    INIT
    ============================================================ */
+/* ============================================================
+   PERSISTENZA E PROMEMORIA BACKUP
+   ============================================================ */
+const ULTIMO_BACKUP_KEY = 'tenuta-spese.ultimoBackup';
+const BACKUP_GIORNI_AVVISO = 14;
+function renderPromemoriaBackup() {
+  const el = document.getElementById('backup-reminder');
+  if (!el) return;
+  let ts = 0;
+  try { ts = Number(localStorage.getItem(ULTIMO_BACKUP_KEY)) || 0; } catch (_) {}
+  const haDati = stato.movimenti.length + stato.scontrini.length + stato.archivioMesi.length > 0;
+  const giorni = ts ? Math.floor((Date.now() - ts) / 86400000) : null;
+  if (haDati && (giorni === null || giorni >= BACKUP_GIORNI_AVVISO)) {
+    el.style.display = 'block';
+    el.textContent = giorni === null
+      ? 'Non hai ancora esportato un backup: i dati vivono solo in questo browser. Esporta il JSON da Impostazioni.'
+      : 'Ultimo backup ' + giorni + ' giorni fa. Esporta un nuovo JSON da Impostazioni.';
+  } else {
+    el.style.display = 'none';
+  }
+}
+// Chiede al browser di non cancellare lo storage sotto pressione di spazio.
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
+
 renderScontrino();
 renderDashboard();
 renderFileRiferimento();
+renderPromemoriaBackup();
+if (avvisoAvvio) toast(avvisoAvvio, 'danger', 12000);
 </script>
 
 <script>
@@ -5444,9 +5387,12 @@ if ('serviceWorker' in navigator) {
     // Il nuovo worker chiama skipWaiting()+clients.claim(): quando prende il
     // controllo ricarichiamo una sola volta per far entrare in scena l'HTML
     // aggiornato. Il flag evita cicli di reload.
+    // Niente reload alla PRIMA installazione (non c'è una versione vecchia da sostituire):
+    // evita di perdere un form o un'analisi OCR in corso.
+    var avevaController = !!navigator.serviceWorker.controller;
     var ricaricato = false;
     navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (ricaricato) return;
+      if (ricaricato || !avevaController) return;
       ricaricato = true;
       window.location.reload();
     });

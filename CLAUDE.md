@@ -4,23 +4,33 @@ PWA per la gestione delle spese personali. App single-file, nessun framework, ne
 
 ## Stack
 
-- `index.html` — l'intera app: markup, CSS e JS inline in un unico file (~4600 righe, ~164KB). Nessuna dipendenza esterna, nessun bundler.
-- `sw.js` — service worker (funzionalità offline/PWA).
-- `manifest.json` — manifest PWA (installabilità).
-- `gen_icons.py` — genera le icone PNG in `icons/` senza dipendenze esterne (solo stdlib Python).
-- `.github/workflows/deploy-pages.yml` — deploy automatico su GitHub Pages, ma **solo** al push sui branch `Tenuta-spese-telefono` e `Tenuta-spesa-finale-V1` (non su `main`).
+- `index.html` — app: markup, CSS e JS inline (~5500 righe). Nessun bundler né build step.
+- `logic.js` — logica pura (default stato, migrazione, `validaStato`/`importaStato`, calcoli, utility). Nessun DOM/localStorage: è testata da `tests/`. Caricata da `index.html` e usabile in Node (`module.exports`).
+- `sw.js` — service worker. `CACHE_VERSION` deve essere identica a `APP_VERSION` di `index.html` (lo verifica un test): vanno bumpate insieme a ogni release.
+- `manifest.json` — manifest PWA.
+- `gen_icons.py` — genera le icone PNG in `icons/` (solo stdlib Python).
+- `tests/logic.test.js` — test `node --test` (nessuna dipendenza): logica, versioni sincronizzate, SRI, escape HTML.
+- `.github/workflows/deploy-pages.yml` — test + deploy su GitHub Pages al push su `main`, `Tenuta-spese-telefono`, `Tenuta-spesa-finale-V1` (o `workflow_dispatch`). `test.yml` esegue i test su PR e altri branch.
+
+## Dipendenze esterne (CDN, con SRI)
+
+Chart.js, chartjs-chart-treemap, Tesseract.js e pdf.js arrivano da jsDelivr con `integrity=` sha384; i font da Google Fonts. L'app funziona offline solo dopo il primo avvio online (il service worker mette in cache gli asset). Se si cambia versione di una libreria va rigenerato l'hash:
+`openssl dgst -sha384 -binary <file> | openssl base64 -A` sul file esatto del pacchetto npm (jsDelivr serve i file npm invariati; per `.min.js` generati al volo non c'è un hash stabile, usare il file non minificato).
 
 ## Avvio/test
 
-- Nessun build richiesto: apri `index.html` direttamente nel browser, oppure serviLo staticamente (es. `python3 -m http.server`).
+- Nessun build: apri `index.html` nel browser oppure `python3 -m http.server`.
+- Test: `node --test tests/` (o `npm test`).
 - Rigenerare le icone: `python3 gen_icons.py`.
-- Nessuna suite di test o linter configurati.
 
 ## Convenzioni
 
-- Tutto il codice applicativo vive in `index.html`: prima di leggerlo per intero, usa grep/ricerca mirata sulla sezione interessata — è un file grande e leggerlo tutto pesa sul contesto.
-- I dati utente persistono nel `localStorage` del browser; l'export/import JSON (pattern `dati_DD-MM-YYYY_HH-MM.json`) è il meccanismo di backup — questi file contengono dati personali e non vanno mai committati (vedi `.gitignore`).
-- Il deploy su Pages non si attiva sul push a `main`: per pubblicare bisogna pushare su uno dei branch elencati sopra o usare `workflow_dispatch`.
+- Prima di leggere `index.html` per intero usa grep/ricerca mirata: è un file grande.
+- Ogni valore che arriva da dati utente/JSON importato va passato da `escapeHtml()` prima di finire in `innerHTML` (anche id e attributi): un test lo controlla.
+- Importi sempre arrotondati con `round2`; le date locali con `oggi()` (mai `toISOString()`).
+- Nuove regole di calcolo/validazione vanno in `logic.js` con un test, non inline.
+- I dati utente stanno nel `localStorage`; export/import JSON (`dati_DD-MM-YYYY_HH-MM.json`) è il backup. Questi file contengono dati personali e non vanno mai committati (vedi `.gitignore`). L'import passa da `importaStato()` e conserva una copia in `smartFinance_v1_prima_import`; dati illegibili vengono copiati in `smartFinance_v1_corrotto_<timestamp>`.
+- `saldoRiportato` è un riporto legacy (arriva solo dalla migrazione del vecchio schema) ed è azzerato alla prima chiusura mese.
 
 ## Documentazione utente
 
