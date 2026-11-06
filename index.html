@@ -2108,12 +2108,13 @@ html, body { overflow-x: hidden; }
         <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="ia-attivo" /> Usa Gemini per analizzare gli scontrini</label>
         <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
           <div class="form-group"><label class="form-label">Chiave API (Google AI Studio)</label><input type="password" id="ia-chiave" autocomplete="off" placeholder="incolla qui la chiave" /></div>
-          <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" placeholder="gemini-2.5-flash" /></div>
+          <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" list="ia-modelli" placeholder="gemini-2.5-flash" /><datalist id="ia-modelli"></datalist></div>
         </div>
         <label style="display:flex; gap:8px; align-items:center; margin:8px 0;"><input type="checkbox" id="ia-foto" /> Conserva una copia ridotta della foto nei casi di prova (serve a migliorare l'OCR)</label>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="btn btn-primary" id="btn-ia-salva">Salva</button>
           <button class="btn btn-secondary" id="btn-ia-test">Prova la connessione</button>
+          <button class="btn btn-ghost" id="btn-ia-modelli" title="Chiede a Google quali modelli può usare la tua chiave">Cerca modello</button>
         </div>
         <p id="ia-stato" style="font-size:13px; margin-top:8px;"></p>
 
@@ -2351,8 +2352,8 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06f';
-const APP_BUILD_NOTE = 'Grafica mobile: schede al posto delle tabelle, filtri compatti, tap più ampi; Gemini, analisi, import banca, entrate extra';
+const APP_VERSION = '2026.11.06g';
+const APP_BUILD_NOTE = 'Gemini: ricerca automatica del modello valido (se il nome non esiste più); grafica mobile, analisi prodotti, import banca';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3848,7 +3849,9 @@ async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
     if (!res.ok) {
       let det = '';
       try { det = (await res.json()).error?.message || ''; } catch (_) {}
-      throw new Error(messaggioErroreGemini(res.status, det));
+      const err = new Error(messaggioErroreGemini(res.status, det));
+      err.status = res.status;
+      throw err;
     }
     const j = await res.json();
     const testo = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
@@ -3861,11 +3864,50 @@ async function chiamaGemini(corpo, ia, timeoutMs = 60000) {
   } finally { clearTimeout(t); }
 }
 
+/** Modelli che la chiave può davvero usare (models.list). I nomi cambiano nel tempo: meglio chiederli a Google. */
+async function elencaModelliGemini(chiave) {
+  const out = [];
+  let pagina = '';
+  for (let i = 0; i < 4; i++) {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200' + (pagina ? '&pageToken=' + encodeURIComponent(pagina) : ''), {
+      headers: { 'x-goog-api-key': chiave }
+    });
+    if (!res.ok) {
+      let det = ''; try { det = (await res.json()).error?.message || ''; } catch (_) {}
+      const err = new Error(messaggioErroreGemini(res.status, det)); err.status = res.status; throw err;
+    }
+    const j = await res.json();
+    out.push(...(j.models || []));
+    pagina = j.nextPageToken || '';
+    if (!pagina) break;
+  }
+  return out;
+}
+
+/** Se il modello configurato non esiste più (404), ne cerca uno valido, lo salva e lo restituisce. */
+async function correggiModelloGemini(ia) {
+  const elenco = await elencaModelliGemini(ia.chiave);
+  const nuovo = scegliModelloGemini(elenco);
+  if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave (controlla che sia abilitata in Google AI Studio)');
+  salvaConfigIA({ ...configIA(), modello: nuovo });
+  return nuovo;
+}
+
 async function analizzaConGemini(pagine) {
-  const ia = configIA();
+  let ia = configIA();
   const imgs = [];
   for (const p of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(p));
-  const testo = await chiamaGemini(costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI), ia);
+  const corpo = costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI);
+  let testo;
+  try { testo = await chiamaGemini(corpo, ia); }
+  catch (e) {
+    if (e.status !== 404) throw e;
+    // modello ritirato/rinominato: si cerca quello giusto e si riprova una volta
+    const nuovo = await correggiModelloGemini(ia);
+    ia = { ...ia, modello: nuovo };
+    toast('Modello Gemini aggiornato automaticamente a ' + nuovo + '.', 'info', 5000);
+    testo = await chiamaGemini(corpo, ia);
+  }
   return { lettura: normalizzaRispostaGemini(testo, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null };
 }
 
@@ -5924,16 +5966,48 @@ document.getElementById('btn-ia-salva').addEventListener('click', () => {
   toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
   renderIA();
 });
+function mostraStatoIA(testo, colore) { const st = document.getElementById('ia-stato'); st.style.color = colore; st.textContent = testo; }
+function iaDaCampi() {
+  return { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
+}
+const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { temperature: 0, maxOutputTokens: 8 } };
+
 document.getElementById('btn-ia-test').addEventListener('click', async () => {
-  const st = document.getElementById('ia-stato');
-  const ia = { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
-  if (ia.chiave.length < 10) { st.style.color = 'var(--danger)'; st.textContent = 'Inserisci prima la chiave API.'; return; }
-  st.style.color = 'var(--text-muted)'; st.textContent = 'Provo la connessione…';
+  let ia = iaDaCampi();
+  if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
+  mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
   try {
-    await chiamaGemini({ contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { temperature: 0, maxOutputTokens: 8 } }, ia, 20000);
-    st.style.color = 'var(--success)'; st.textContent = 'Connessione riuscita: chiave e modello funzionano. Ricorda di premere Salva.';
-  } catch (e) { st.style.color = 'var(--danger)'; st.textContent = 'Non funziona: ' + e.message + '.'; }
+    try { await chiamaGemini(PROVA_GEMINI, ia, 20000); }
+    catch (e) {
+      if (e.status !== 404) throw e;
+      // Il modello indicato non esiste (più): chiedo a Google quale usare con questa chiave.
+      mostraStatoIA('Il modello "' + ia.modello + '" non esiste: cerco quello giusto…', 'var(--text-muted)');
+      const elenco = await elencaModelliGemini(ia.chiave);
+      const nuovo = scegliModelloGemini(elenco);
+      if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
+      ia = { ...ia, modello: nuovo };
+      document.getElementById('ia-modello').value = nuovo;
+      await chiamaGemini(PROVA_GEMINI, ia, 20000);
+    }
+    document.getElementById('ia-modello').value = ia.modello;
+    mostraStatoIA('Connessione riuscita con il modello "' + ia.modello + '". Premi Salva per tenerlo.', 'var(--success)');
+  } catch (e) { mostraStatoIA('Non funziona: ' + e.message + '.', 'var(--danger)'); }
 });
+document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
+  const ia = iaDaCampi();
+  if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
+  mostraStatoIA('Chiedo a Google i modelli disponibili…', 'var(--text-muted)');
+  try {
+    const elenco = await elencaModelliGemini(ia.chiave);
+    const nomi = elenco.filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini-/.test(m.name || '')).map(m => m.name.replace(/^models\//, ''));
+    document.getElementById('ia-modelli').innerHTML = nomi.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    const scelto = scegliModelloGemini(elenco);
+    if (!scelto) { mostraStatoIA('Nessun modello Gemini utilizzabile con questa chiave.', 'var(--danger)'); return; }
+    document.getElementById('ia-modello').value = scelto;
+    mostraStatoIA(nomi.length + ' modelli disponibili. Ho scelto "' + scelto + '": premi Prova la connessione e poi Salva.', 'var(--success)');
+  } catch (e) { mostraStatoIA('Non riesco a leggere i modelli: ' + e.message + '.', 'var(--danger)'); }
+});
+
 document.getElementById('btn-casi-export').addEventListener('click', async () => {
   if (!Archivio.ok) { toast('Archivio non disponibile.', 'warning'); return; }
   try {

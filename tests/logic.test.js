@@ -408,3 +408,14 @@ test('messaggioErroreGemini: messaggi chiari per i casi comuni', () => {
   assert.match(L.messaggioErroreGemini(503, ''), /non disponibile/);
   assert.match(L.messaggioErroreGemini(418, ''), /418/);
 });
+
+test('scegliModelloGemini: alias latest, flash stabile più recente, esclusioni', () => {
+  const m = (n, met = ['generateContent']) => ({ name: 'models/' + n, supportedGenerationMethods: met });
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-flash-latest'), m('gemini-3-flash')]), 'gemini-flash-latest');
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-3-flash'), m('gemini-2.5-pro'), m('gemini-3-flash-lite'), m('gemini-3-flash-preview')]), 'gemini-3-flash');
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash-image'), m('gemini-2.0-flash-exp'), m('embedding-001', ['embedContent']), m('gemini-2.5-flash-tts')]), 'gemini-2.0-flash-exp'); // ripiego: meglio di niente
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-pro'), m('gemini-2.5-flash-lite')]), 'gemini-2.5-pro');
+  assert.equal(L.scegliModelloGemini([m('gemini-3-flash', ['embedContent'])]), null);   // non supporta generateContent
+  assert.equal(L.scegliModelloGemini([]), null);
+  assert.equal(L.scegliModelloGemini(null), null);
+});
