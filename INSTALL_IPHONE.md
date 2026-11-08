@@ -34,7 +34,7 @@ lo richiede. GitHub Pages lo fa gratis.
 2. Tocca il pulsante **Condividi** (il quadrato con la freccia in alto ↑).
 3. Scorri e tocca **«Aggiungi a Home»** (*Add to Home Screen*).
 4. Conferma con **Aggiungi**.
-5. Sulla Home compare l'icona **Tenuta Spese** (€ oro su sfondo scuro).
+5. Sulla Home compare l'icona **Tenuta Spese** (€ verde salvia su sfondo grafite).
 
 Avviando l'app dall'icona parte a **schermo intero**, senza barra indirizzi.
 

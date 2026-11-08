@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Genera le icone PWA (PNG) senza dipendenze esterne.
 
-Sfondo blu notte (#050810) + glifo Euro ciano (#22d3ee), come il tema dell'app.
+Sfondo grafite (#141416) + glifo Euro verde salvia (#62c3a3), come il tema dell'app.
 PNG scritto a mano (solo zlib di stdlib), glifo con supersampling 4x per bordi morbidi.
 """
 import math
 import struct
 import zlib
 
-BG = (0x05, 0x08, 0x10)
-ACCENT = (0x22, 0xd3, 0xee)
+BG = (0x14, 0x14, 0x16)
+ACCENT = (0x62, 0xc3, 0xa3)
 SS = 4  # fattore di supersampling
 
 
