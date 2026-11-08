@@ -443,3 +443,14 @@ test('erroreRagionamentoGemini: solo un 400 che cita il thinking', () => {
   assert.equal(L.erroreRagionamentoGemini(404, 'thinking'), false);
   assert.equal(L.erroreRagionamentoGemini(400, undefined), false);
 });
+
+test('alternativeGemini: riserve ordinate (flash stabili, lite, alias), senza esclusi, pro e modelli non testuali', () => {
+  const m = (n, met = ['generateContent']) => ({ name: 'models/' + n, supportedGenerationMethods: met });
+  const elenco = [m('gemini-flash-latest'), m('gemini-2.5-pro'), m('gemini-3-flash'), m('gemini-2.5-flash'), m('gemini-3-flash-lite'),
+    m('gemini-flash-lite-latest'), m('gemini-3-flash-preview'), m('gemini-2.5-flash-image'), m('embedding-001', ['embedContent']), m('gemini-3-flash-tts')];
+  assert.deepEqual(L.alternativeGemini(elenco, ['gemini-flash-latest'], 3), ['gemini-3-flash', 'gemini-2.5-flash', 'gemini-3-flash-lite']);
+  assert.deepEqual(L.alternativeGemini(elenco, ['gemini-flash-latest', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-3-flash-lite'], 5), ['gemini-flash-lite-latest', 'gemini-3-flash-preview']);
+  assert.deepEqual(L.alternativeGemini([m('gemini-2.5-pro')], [], 3), []);
+  assert.deepEqual(L.alternativeGemini(null), []);
+  assert.deepEqual(L.alternativeGemini(elenco, [], 0), []);
+});

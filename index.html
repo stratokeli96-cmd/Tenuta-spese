@@ -2352,7 +2352,7 @@ html, body { overflow-x: hidden; }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.06i';
+const APP_VERSION = '2026.11.06j';
 const APP_BUILD_NOTE = 'Gemini: prova di connessione corretta per i modelli che ragionano, errori più dettagliati; ricerca automatica del modello';
 
 /* ============================================================
@@ -3875,30 +3875,43 @@ async function richiestaGemini(corpo, ia, timeoutMs) {
     }
     return testo;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Gemini non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi: riprova, meglio con una connessione stabile');
+    if (e.name === 'AbortError') {
+      const err = new Error('Gemini non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi');
+      err.timeout = true;
+      throw err;
+    }
     if (e instanceof TypeError) throw new Error('rete non raggiungibile');
     throw e;
   } finally { clearTimeout(t); }
 }
 
 /** Modelli che la chiave può davvero usare (models.list). I nomi cambiano nel tempo: meglio chiederli a Google. */
-async function elencaModelliGemini(chiave) {
+async function elencaModelliGemini(chiave, timeoutMs = 20000) {
   const out = [];
   let pagina = '';
-  for (let i = 0; i < 4; i++) {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200' + (pagina ? '&pageToken=' + encodeURIComponent(pagina) : ''), {
-      headers: { 'x-goog-api-key': chiave }
-    });
-    if (!res.ok) {
-      let det = ''; try { det = (await res.json()).error?.message || ''; } catch (_) {}
-      const err = new Error(messaggioErroreGemini(res.status, det)); err.status = res.status; throw err;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    for (let i = 0; i < 4; i++) {
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200' + (pagina ? '&pageToken=' + encodeURIComponent(pagina) : ''), {
+        headers: { 'x-goog-api-key': chiave },
+        signal: ctrl.signal
+      });
+      if (!res.ok) {
+        let det = ''; try { det = (await res.json()).error?.message || ''; } catch (_) {}
+        const err = new Error(messaggioErroreGemini(res.status, det)); err.status = res.status; throw err;
+      }
+      const j = await res.json();
+      out.push(...(j.models || []));
+      pagina = j.nextPageToken || '';
+      if (!pagina) break;
     }
-    const j = await res.json();
-    out.push(...(j.models || []));
-    pagina = j.nextPageToken || '';
-    if (!pagina) break;
-  }
-  return out;
+    return out;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Google non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi');
+    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
+    throw e;
+  } finally { clearTimeout(t); }
 }
 
 /** Se il modello configurato non esiste più (404), ne cerca uno valido, lo salva e lo restituisce. */
@@ -5988,32 +6001,62 @@ function iaDaCampi() {
   return { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
 }
 /** La richiesta di prova riesce se Google risponde 200: anche un testo vuoto (modelli che "ragionano") prova che chiave e modello funzionano. */
-async function provaGemini(ia) {
-  try { await chiamaGemini(PROVA_GEMINI, ia, 45000); }
+async function provaGemini(ia, timeoutMs = 45000) {
+  try { await chiamaGemini(PROVA_GEMINI, ia, timeoutMs); }
   catch (e) { if (!e.rispostaVuota || /bloccata/.test(e.message)) throw e; }
 }
 const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { maxOutputTokens: 1024 } };
+
+/**
+ * Il modello configurato non risponde in tempo. Distingue "Google non è raggiungibile" da "è solo
+ * quel modello a non rispondere": chiede l'elenco modelli e prova insieme alcuni altri (vince il primo).
+ */
+async function cercaModelloCheRisponde(ia) {
+  mostraStatoIA('"' + ia.modello + '" non risponde: controllo la connessione a Google…', 'var(--text-muted)');
+  const t0 = Date.now();
+  let elenco;
+  try { elenco = await elencaModelliGemini(ia.chiave); }
+  catch (e) { throw new Error('anche l\'elenco dei modelli non arriva (' + e.message + '): la connessione verso Google è bloccata o troppo lenta, il problema non è il modello'); }
+  const sec = ((Date.now() - t0) / 1000).toFixed(1);
+  const alt = alternativeGemini(elenco, [ia.modello], 3);
+  if (!alt.length) throw new Error('Google è raggiungibile (elenco modelli in ' + sec + ' s) ma "' + ia.modello + '" non risponde e non ci sono altri modelli da provare');
+  mostraStatoIA('Google risponde (' + sec + ' s). Provo anche: ' + alt.join(', ') + '…', 'var(--text-muted)');
+  try {
+    const modello = await Promise.any(alt.map(m => provaGemini({ ...ia, modello: m }, 25000).then(() => m, e => { throw new Error(m + ': ' + e.message); })));
+    return { ...ia, modello };
+  } catch (agg) {
+    const dettagli = (agg.errors || [agg]).map(e => e.message).join('; ');
+    throw new Error('Google è raggiungibile (elenco modelli in ' + sec + ' s) ma i modelli provati non rispondono (' + dettagli + '). Servizio sovraccarico o limiti della chiave: riprova più tardi');
+  }
+}
 
 document.getElementById('btn-ia-test').addEventListener('click', async () => {
   let ia = iaDaCampi();
   if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
   mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
+  let lento = '';   // modello originale che non rispondeva, se ne abbiamo trovato uno che risponde
   try {
     try { await provaGemini(ia); }
     catch (e) {
-      if (e.status !== 404) throw e;
-      // Il modello indicato non esiste (più): chiedo a Google quale usare con questa chiave.
-      mostraStatoIA('Il modello "' + ia.modello + '" non esiste: cerco quello giusto…', 'var(--text-muted)');
-      const elenco = await elencaModelliGemini(ia.chiave);
-      const nuovo = scegliModelloGemini(elenco);
-      if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
-      ia = { ...ia, modello: nuovo };
-      document.getElementById('ia-modello').value = nuovo;
-      await provaGemini(ia);
+      if (e.status === 404) {
+        // Il modello indicato non esiste (più): chiedo a Google quale usare con questa chiave.
+        mostraStatoIA('Il modello "' + ia.modello + '" non esiste: cerco quello giusto…', 'var(--text-muted)');
+        const elenco = await elencaModelliGemini(ia.chiave);
+        const nuovo = scegliModelloGemini(elenco);
+        if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
+        ia = { ...ia, modello: nuovo };
+        document.getElementById('ia-modello').value = nuovo;
+        await provaGemini(ia);
+      } else if (e.timeout) {
+        lento = ia.modello;
+        ia = await cercaModelloCheRisponde(ia);
+      } else throw e;
     }
     document.getElementById('ia-modello').value = ia.modello;
-    mostraStatoIA('Connessione riuscita con il modello "' + ia.modello + '". Premi Salva per tenerlo.', 'var(--success)');
-  } catch (e) { mostraStatoIA('Non funziona con il modello "' + ia.modello + '": ' + e.message + '.', 'var(--danger)'); }
+    mostraStatoIA(lento
+      ? 'Il modello "' + lento + '" non risponde, ma "' + ia.modello + '" sì. Premi Salva per usare "' + ia.modello + '".'
+      : 'Connessione riuscita con il modello "' + ia.modello + '". Premi Salva per tenerlo.', 'var(--success)');
+  } catch (e) { mostraStatoIA('Non funziona con il modello "' + (lento || ia.modello) + '": ' + e.message + '.', 'var(--danger)'); }
 });
 document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
   const ia = iaDaCampi();
