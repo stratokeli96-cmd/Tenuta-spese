@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.crt)",
+      "Read(secrets/**)",
+      "Read(credentials/**)",
+      "Read(dati_*.json)",
+      "Read(backup_*.json)",
+      "Read(casi_scontrini_*.json)"
+    ]
+  }
+}
