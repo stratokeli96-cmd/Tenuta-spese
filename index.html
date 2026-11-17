@@ -2087,8 +2087,8 @@ table.data tbody tr { transition: background var(--t-fast); }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.17a';
-const APP_BUILD_NOTE = 'Gemini: quando il modello configurato smette di rispondere (ritirato o sovraccarico) si passa da soli a uno che funziona, anche durante la scansione di uno scontrino, non solo dal test in Impostazioni';
+const APP_VERSION = '2026.11.17b';
+const APP_BUILD_NOTE = 'Gemini: il passaggio automatico a un altro modello scatta anche quando il servizio risponde "temporaneamente non disponibile" (5xx), non solo su modello ritirato o senza risposta';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3653,8 +3653,9 @@ async function analizzaConGemini(pagine) {
   let testo;
   try { testo = await chiamaGemini(corpo, ia); }
   catch (e) {
-    if (e.status !== 404 && !e.timeout) throw e;
-    // modello ritirato/rinominato oppure sovraccarico: si cerca un'alternativa che risponda e si tiene
+    if (e.status !== 404 && !e.timeout && !(e.status >= 500)) throw e;
+    // modello ritirato/rinominato, non risponde in tempo, oppure il servizio Gemini dà un errore
+    // temporaneo (5xx, es. "temporaneamente non disponibile"): si cerca un'alternativa e si tiene
     const modelloRotto = ia.modello;
     const r = await correggiModelloGemini(ia, corpo, e.status === 404);
     testo = r.testo;
@@ -5769,7 +5770,8 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
         if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
         ia = { ...ia, modello: nuovo };
         await provaGemini(ia);
-      } else if (e.timeout) {
+      } else if (e.timeout || e.status >= 500) {
+        // Non risponde in tempo, oppure il servizio dà un errore temporaneo (5xx): si cercano alternative.
         lento = ia.modello;
         ia = await cercaModelloCheRisponde(ia);
       } else throw e;
