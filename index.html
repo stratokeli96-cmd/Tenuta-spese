@@ -2087,7 +2087,7 @@ table.data tbody tr { transition: background var(--t-fast); }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.17c';
+const APP_VERSION = '2026.11.17d';
 const APP_BUILD_NOTE = 'Gemini: tra i modelli di riserva si tiene sempre anche il più maturo, non solo i più recenti (che possono essere sovraccarichi tutti insieme appena usciti)';
 
 /* ============================================================
@@ -3632,7 +3632,8 @@ async function correggiModelloGemini(ia, corpo, inesistente) {
     salvaConfigIA({ ...configIA(), modello: nuovo });
     return { testo, modello: nuovo };
   }
-  const alt = alternativeGemini(elenco, [ia.modello], 3);
+  // 4 riserve: oltre ai "flash" stabili entra anche un "lite" (più veloce, spesso meno carico)
+  const alt = alternativeGemini(elenco, [ia.modello], 4);
   if (!alt.length) throw new Error('nessun modello alternativo disponibile con questa chiave');
   try {
     const { testo, modello } = await Promise.any(alt.map(m =>
@@ -3651,7 +3652,7 @@ async function analizzaConGemini(pagine) {
   for (const p of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(p));
   const corpo = costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI);
   let testo;
-  try { testo = await chiamaGemini(corpo, ia); }
+  try { testo = await chiamaGemini(corpo, ia, 40000); }
   catch (e) {
     if (e.status !== 404 && !e.timeout && !(e.status >= 500)) throw e;
     // modello ritirato/rinominato, non risponde in tempo, oppure il servizio Gemini dà un errore
@@ -3681,6 +3682,7 @@ async function ocrLocale(pagine) {
 
 /* Lettura in corso: tiene insieme OCR locale, Gemini e (al salvataggio) la correzione finale. */
 let ultimaLettura = null;
+const ATTESA_GEMINI_DOPO_OCR_MS = 6000;   // quanto si aspetta Gemini dopo che l'OCR locale ha finito
 
 function aggiornaConfrontoIA() {
   const L0 = ultimaLettura;
@@ -3733,7 +3735,15 @@ async function gestisciFileOCR(file) {
 
     let parsed = null, fonte = 'ocr', avvisoIA = '';
     if (usaGemini) {
-      const g = await pGem.then(r => r.lettura, e => { avvisoIA = 'Gemini non disponibile (' + e.message + '): uso l\'OCR locale.'; return null; });
+      // Gemini è un di più: se l'OCR locale ha finito e Gemini non ha ancora risposto, gli si danno
+      // pochi secondi e poi si prosegue (mai minuti di attesa). Se l'OCR non è disponibile o fallisce
+      // non c'è alternativa e si aspetta Gemini fino in fondo, come prima.
+      const rispostaGemini = pGem.then(r => r.lettura, e => { avvisoIA = 'Gemini non disponibile (' + e.message + '): uso l\'OCR locale.'; return null; });
+      const tolleranza = pOcr.then(() => new Promise(res => setTimeout(() => {
+        avvisoIA = 'Gemini non ha risposto in tempo: uso l\'OCR locale per non farti aspettare.';
+        res(null);
+      }, ATTESA_GEMINI_DOPO_OCR_MS)), () => new Promise(() => {}));
+      const g = await Promise.race([rispostaGemini, tolleranza]);
       if (g && !g.errori.length) {
         parsed = { data: g.data, negozio: g.negozio, righe: g.righe, errori: [], avvisi: g.avvisi, totale: g.totale, totaleRiportato: g.totaleRiportato, righeDaVerificare: 0 };
         fonte = 'gemini';
@@ -5723,6 +5733,8 @@ function mostraStatoIA(testo, colore) { const st = document.getElementById('ia-s
 function iaDaCampi() {
   return { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
 }
+const tempoRisposta = ms => ms == null ? '' : ' · risposta in ' + (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+
 /** La richiesta di prova riesce se Google risponde 200: anche un testo vuoto (modelli che "ragionano") prova che chiave e modello funzionano. */
 async function provaGemini(ia, timeoutMs = 45000) {
   try { await chiamaGemini(PROVA_GEMINI, ia, timeoutMs); }
@@ -5741,12 +5753,13 @@ async function cercaModelloCheRisponde(ia) {
   try { elenco = await elencaModelliGemini(ia.chiave); }
   catch (e) { throw new Error('anche l\'elenco dei modelli non arriva (' + e.message + '): la connessione verso Google è bloccata o troppo lenta, il problema non è il modello'); }
   const sec = ((Date.now() - t0) / 1000).toFixed(1);
-  const alt = alternativeGemini(elenco, [ia.modello], 3);
+  const alt = alternativeGemini(elenco, [ia.modello], 5);
   if (!alt.length) throw new Error('Google è raggiungibile (elenco modelli in ' + sec + ' s) ma "' + ia.modello + '" non risponde e non ci sono altri modelli da provare');
   mostraStatoIA('Google risponde (' + sec + ' s). Provo anche: ' + alt.join(', ') + '…', 'var(--text-muted)');
   try {
+    const t1 = Date.now();
     const modello = await Promise.any(alt.map(m => provaGemini({ ...ia, modello: m }, 25000).then(() => m, e => { throw new Error(m + ': ' + e.message); })));
-    return { ...ia, modello };
+    return { ia: { ...ia, modello }, ms: Date.now() - t1 };
   } catch (agg) {
     const dettagli = (agg.errors || [agg]).map(e => e.message).join('; ');
     throw new Error('Google è raggiungibile (elenco modelli in ' + sec + ' s) ma i modelli provati non rispondono (' + dettagli + '). Servizio sovraccarico o limiti della chiave: riprova più tardi');
@@ -5760,7 +5773,9 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
   mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
   let lento = '';   // modello originale che non rispondeva, se ne abbiamo trovato uno che risponde
   try {
-    try { await provaGemini(ia); }
+    const t0 = Date.now();
+    let ms = null;
+    try { await provaGemini(ia); ms = Date.now() - t0; }
     catch (e) {
       if (e.status === 404) {
         // Il modello indicato non esiste (più): chiedo a Google quale usare con questa chiave.
@@ -5769,19 +5784,22 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
         const nuovo = scegliModelloGemini(elenco);
         if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
         ia = { ...ia, modello: nuovo };
+        const t2 = Date.now();
         await provaGemini(ia);
+        ms = Date.now() - t2;
       } else if (e.timeout || e.status >= 500) {
         // Non risponde in tempo, oppure il servizio dà un errore temporaneo (5xx): si cercano alternative.
         lento = ia.modello;
-        ia = await cercaModelloCheRisponde(ia);
+        const r = await cercaModelloCheRisponde(ia);
+        ia = r.ia; ms = r.ms;
       } else throw e;
     }
     document.getElementById('ia-modello').value = ia.modello;
     // Trovato un modello diverso che funziona: lo tengo subito, senza passaggi manuali.
     if (ia.modello !== originale) salvaConfigIA(ia);
     mostraStatoIA(lento
-      ? 'Il modello "' + lento + '" non risponde: passato automaticamente a "' + ia.modello + '" (salvato).'
-      : 'Connessione riuscita con il modello "' + ia.modello + '".', 'var(--success)');
+      ? 'Il modello "' + lento + '" non risponde: passato automaticamente a "' + ia.modello + '" (salvato' + tempoRisposta(ms) + ').'
+      : 'Connessione riuscita con il modello "' + ia.modello + '"' + tempoRisposta(ms) + '.', 'var(--success)');
   } catch (e) { mostraStatoIA('Non funziona con il modello "' + (lento || ia.modello) + '": ' + e.message + '.', 'var(--danger)'); }
 });
 document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
