@@ -5762,7 +5762,9 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
   const originale = ia.modello;
   if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
   const pausa = pausaGemini();
-  if (pausa) { mostraStatoIA('Gemini è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata.', 'var(--warning)'); return; }
+  const salvata = configIA();
+  if (pausa && (ia.chiave !== salvata.chiave || ia.modello !== salvata.modello)) togliPausaGemini();   // la pausa riguarda chiave e modello salvati
+  else if (pausa) { mostraStatoIA('Gemini è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata: per riprovare subito incolla un\'altra chiave o scegli un altro modello.', 'var(--warning)'); return; }
   mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
   try {
     const t0 = Date.now();
