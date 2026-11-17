@@ -2087,8 +2087,8 @@ table.data tbody tr { transition: background var(--t-fast); }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.08a';
-const APP_BUILD_NOTE = 'Gemini: prova di connessione corretta per i modelli che ragionano, errori più dettagliati; ricerca automatica del modello';
+const APP_VERSION = '2026.11.17a';
+const APP_BUILD_NOTE = 'Gemini: quando il modello configurato smette di rispondere (ritirato o sovraccarico) si passa da soli a uno che funziona, anche durante la scansione di uno scontrino, non solo dal test in Impostazioni';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3616,13 +3616,33 @@ async function elencaModelliGemini(chiave, timeoutMs = 20000) {
   } finally { clearTimeout(t); }
 }
 
-/** Se il modello configurato non esiste più (404), ne cerca uno valido, lo salva e lo restituisce. */
-async function correggiModelloGemini(ia) {
+/**
+ * Il modello configurato ha smesso di funzionare, per sempre (ritirato/rinominato: 404) o per ora
+ * (sovraccarico, non risponde in tempo): cerca un'alternativa che risponda alla STESSA richiesta,
+ * la salva come nuova configurazione (così la prossima scansione la usa subito, senza passaggi
+ * manuali in Impostazioni) e restituisce {testo, modello}. Salva solo dopo aver verificato che
+ * l'alternativa risponde davvero, per non tenere un modello che non funziona.
+ */
+async function correggiModelloGemini(ia, corpo, inesistente) {
   const elenco = await elencaModelliGemini(ia.chiave);
-  const nuovo = scegliModelloGemini(elenco);
-  if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave (controlla che sia abilitata in Google AI Studio)');
-  salvaConfigIA({ ...configIA(), modello: nuovo });
-  return nuovo;
+  if (inesistente) {
+    const nuovo = scegliModelloGemini(elenco);
+    if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave (controlla che sia abilitata in Google AI Studio)');
+    const testo = await chiamaGemini(corpo, { ...ia, modello: nuovo });
+    salvaConfigIA({ ...configIA(), modello: nuovo });
+    return { testo, modello: nuovo };
+  }
+  const alt = alternativeGemini(elenco, [ia.modello], 3);
+  if (!alt.length) throw new Error('nessun modello alternativo disponibile con questa chiave');
+  try {
+    const { testo, modello } = await Promise.any(alt.map(m =>
+      chiamaGemini(corpo, { ...ia, modello: m }, 25000).then(testo => ({ testo, modello: m }))
+    ));
+    salvaConfigIA({ ...configIA(), modello });
+    return { testo, modello };
+  } catch (agg) {
+    throw new Error('nessun modello alternativo ha risposto (' + (agg.errors || [agg]).map(e => e.message).join('; ') + ')');
+  }
 }
 
 async function analizzaConGemini(pagine) {
@@ -3633,12 +3653,12 @@ async function analizzaConGemini(pagine) {
   let testo;
   try { testo = await chiamaGemini(corpo, ia); }
   catch (e) {
-    if (e.status !== 404) throw e;
-    // modello ritirato/rinominato: si cerca quello giusto e si riprova una volta
-    const nuovo = await correggiModelloGemini(ia);
-    ia = { ...ia, modello: nuovo };
-    toast('Modello Gemini aggiornato automaticamente a ' + nuovo + '.', 'info', 5000);
-    testo = await chiamaGemini(corpo, ia);
+    if (e.status !== 404 && !e.timeout) throw e;
+    // modello ritirato/rinominato oppure sovraccarico: si cerca un'alternativa che risponda e si tiene
+    const modelloRotto = ia.modello;
+    const r = await correggiModelloGemini(ia, corpo, e.status === 404);
+    testo = r.testo;
+    toast('Modello Gemini "' + modelloRotto + '" non ' + (e.status === 404 ? 'esiste più' : 'risponde') + ': passato automaticamente a "' + r.modello + '".', 'info', 6000);
   }
   return { lettura: normalizzaRispostaGemini(testo, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null };
 }
@@ -5734,6 +5754,7 @@ async function cercaModelloCheRisponde(ia) {
 
 document.getElementById('btn-ia-test').addEventListener('click', async () => {
   let ia = iaDaCampi();
+  const originale = ia.modello;
   if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
   mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
   let lento = '';   // modello originale che non rispondeva, se ne abbiamo trovato uno che risponde
@@ -5747,7 +5768,6 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
         const nuovo = scegliModelloGemini(elenco);
         if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
         ia = { ...ia, modello: nuovo };
-        document.getElementById('ia-modello').value = nuovo;
         await provaGemini(ia);
       } else if (e.timeout) {
         lento = ia.modello;
@@ -5755,9 +5775,11 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
       } else throw e;
     }
     document.getElementById('ia-modello').value = ia.modello;
+    // Trovato un modello diverso che funziona: lo tengo subito, senza passaggi manuali.
+    if (ia.modello !== originale) salvaConfigIA(ia);
     mostraStatoIA(lento
-      ? 'Il modello "' + lento + '" non risponde, ma "' + ia.modello + '" sì. Premi Salva per usare "' + ia.modello + '".'
-      : 'Connessione riuscita con il modello "' + ia.modello + '". Premi Salva per tenerlo.', 'var(--success)');
+      ? 'Il modello "' + lento + '" non risponde: passato automaticamente a "' + ia.modello + '" (salvato).'
+      : 'Connessione riuscita con il modello "' + ia.modello + '".', 'var(--success)');
   } catch (e) { mostraStatoIA('Non funziona con il modello "' + (lento || ia.modello) + '": ' + e.message + '.', 'var(--danger)'); }
 });
 document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
