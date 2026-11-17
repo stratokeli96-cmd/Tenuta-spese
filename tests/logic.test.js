@@ -427,6 +427,63 @@ test('messaggioErroreGemini: il 404 riporta il dettaglio di Google (senza la chi
   assert.match(m, /modello non trovato \(models\/gemini-x is not found/);
 });
 
+const err429 = (violazioni, retry, message = '') => ({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message, details: [
+  { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: violazioni },
+  ...(retry ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: retry }] : [])
+] } });
+
+test('leggiLimiteGemini: riconosce limite al giorno, al minuto e limite 0 dal 429 di Google', () => {
+  assert.deepEqual(L.leggiLimiteGemini(err429([{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaValue: '20', quotaDimensions: { model: 'gemini-3.8-flash' } }], '37s')),
+    { tipo: 'giorno', limite: 20, modello: 'gemini-3.8-flash', attesaMs: 37000 });
+  assert.deepEqual(L.leggiLimiteGemini(err429([{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', quotaValue: '5', quotaDimensions: { model: 'gemini-3.8-flash' } }], '12.5s')),
+    { tipo: 'minuto', limite: 5, modello: 'gemini-3.8-flash', attesaMs: 12500 });
+  assert.equal(L.leggiLimiteGemini(err429([{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', quotaValue: '0' }])).tipo, 'zero');
+  assert.equal(L.leggiLimiteGemini(err429([
+    { quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', quotaValue: '5' },
+    { quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaValue: '20' }])).tipo, 'giorno');
+});
+
+test('leggiLimiteGemini: senza details usa il testo, altrimenti "sconosciuto"', () => {
+  assert.deepEqual(L.leggiLimiteGemini({ error: { message: 'Quota exceeded for metric: x, limit: 20, model: gemini-3.8-flash per day. Please retry in 30.2s.' } }),
+    { tipo: 'giorno', limite: 20, modello: 'gemini-3.8-flash', attesaMs: 30200 });
+  for (const x of [null, undefined, '', 'not json', 42, {}, { error: {} }]) {
+    assert.deepEqual(L.leggiLimiteGemini(x), { tipo: 'sconosciuto', limite: null, modello: '', attesaMs: null }, String(x));
+  }
+});
+
+test('prossimaMezzanotteLosAngeles: anche a cavallo del cambio d\'ora USA', () => {
+  const t = s => Date.parse(s);
+  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-11-17T11:50:00Z')), t('2026-11-18T08:00:00Z'));   // PST
+  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-03-08T09:00:00Z')), t('2026-03-09T07:00:00Z'));   // 01:00 PST → mezzanotte PDT
+  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-11-01T08:30:00Z')), t('2026-11-02T08:00:00Z'));   // 01:30 PDT → mezzanotte PST
+  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-11-18T08:00:00Z')), t('2026-11-19T08:00:00Z'));   // esattamente a mezzanotte → la successiva
+});
+
+test('finePausaGemini: giorno e zero fino a mezzanotte LA, minuto col retryDelay, ripiego 60 s', () => {
+  const ora = Date.parse('2026-11-17T11:50:00Z');
+  assert.equal(L.finePausaGemini({ tipo: 'giorno', attesaMs: 37000 }, ora), Date.parse('2026-11-18T08:00:00Z'));
+  assert.equal(L.finePausaGemini({ tipo: 'zero', attesaMs: null }, ora), Date.parse('2026-11-18T08:00:00Z'));
+  assert.equal(L.finePausaGemini({ tipo: 'minuto', attesaMs: 12500 }, ora), ora + 12500);
+  assert.equal(L.finePausaGemini({ tipo: 'minuto', attesaMs: null }, ora), ora + 60000);
+  assert.equal(L.finePausaGemini({ tipo: 'sconosciuto', attesaMs: null }, ora), ora + 60000);
+});
+
+test('leggiPausaGemini: valida, scaduta o rovinata', () => {
+  const ora = 1_000_000;
+  assert.deepEqual(L.leggiPausaGemini(JSON.stringify({ fino: ora + 5000, motivo: 'quota' }), ora), { fino: ora + 5000, motivo: 'quota' });
+  for (const raw of [null, '', '{', '[]', JSON.stringify({ fino: ora }), JSON.stringify({ fino: 'domani' }), JSON.stringify({ motivo: 'x' })]) {
+    assert.equal(L.leggiPausaGemini(raw, ora), null, String(raw));
+  }
+  assert.equal(L.leggiPausaGemini(JSON.stringify({ fino: ora + 1, motivo: 'x'.repeat(500) }), ora).motivo.length, 200);
+});
+
+test('messaggioErroreGemini: il 429 dice quale limite è stato superato', () => {
+  assert.match(L.messaggioErroreGemini(429, '', { tipo: 'zero', limite: 0, modello: 'gemini-3.8-flash', attesaMs: null }), /"gemini-3\.8-flash" non è incluso nel piano gratuito/);
+  assert.match(L.messaggioErroreGemini(429, '', { tipo: 'giorno', limite: 20, modello: 'gemini-3.8-flash', attesaMs: null }), /quota giornaliera gratuita esaurita \(20 richieste al giorno per "gemini-3\.8-flash"\)/);
+  assert.match(L.messaggioErroreGemini(429, '', { tipo: 'minuto', limite: 5, modello: '', attesaMs: 1000 }), /troppe richieste in un minuto \(limite 5 al minuto\)/);
+  assert.match(L.messaggioErroreGemini(429, ''), /quota/);
+});
+
 test('conRagionamentoRidotto: solo Gemini 3.x e alias latest; gli altri modelli restano invariati', () => {
   const corpo = { contents: [], generationConfig: { temperature: 0, maxOutputTokens: 1024 } };
   for (const m of ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-3-flash', 'gemini-3.5-flash']) {

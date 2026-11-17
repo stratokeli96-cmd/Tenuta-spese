@@ -641,14 +641,81 @@ function scegliModelloGemini(elenco, escludi = []) {
   return (altri.length ? migliore(altri) : migliore(tutti)).nome;
 }
 
-/** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). */
-function messaggioErroreGemini(status, dettaglio) {
+/**
+ * Quale limite gratuito ha fatto scattare un 429 di Gemini. `corpo`: JSON di errore di Google
+ * ({error:{message, details}}), oppure il solo testo; qualsiasi altra cosa → "sconosciuto".
+ */
+function leggiLimiteGemini(corpo) {
+  const out = { tipo: 'sconosciuto', limite: null, modello: '', attesaMs: null };
+  const err = corpo && typeof corpo === 'object' ? corpo.error : null;
+  const msg = typeof corpo === 'string' ? corpo : (err && typeof err.message === 'string' ? err.message : '');
+  const det = err && Array.isArray(err.details) ? err.details : [];
+  const tipoDi = d => d && typeof d['@type'] === 'string' ? d['@type'] : '';
+  const viol = det.filter(d => /QuotaFailure$/.test(tipoDi(d))).flatMap(d => Array.isArray(d.violations) ? d.violations : []).filter(v => v && typeof v === 'object');
+  const ids = viol.map(v => _str(v.quotaId)).join(' ');
+  if (viol.some(v => _str(v.quotaValue) === '0') || /limit:\s*0(?!\d)/i.test(msg)) out.tipo = 'zero';
+  else if (/PerDay/.test(ids) || /per\s*day/i.test(msg)) out.tipo = 'giorno';
+  else if (/PerMinute/.test(ids) || /per\s*minute/i.test(msg)) out.tipo = 'minuto';
+  const pesa = v => _str(v.quotaValue) === '0' ? 3 : /PerDay/.test(_str(v.quotaId)) ? 2 : /PerMinute/.test(_str(v.quotaId)) ? 1 : 0;
+  const v = viol.slice().sort((a, b) => pesa(b) - pesa(a))[0];
+  const lim = v && _str(v.quotaValue) !== '' ? Number(v.quotaValue) : (msg.match(/limit:\s*(\d+)/i) || [])[1];
+  if (lim !== undefined && Number.isFinite(Number(lim))) out.limite = Number(lim);
+  out.modello = (v && v.quotaDimensions && _str(v.quotaDimensions.model)) || ((msg.match(/model:\s*([\w.-]+)/i) || [])[1] || '').replace(/\.+$/, '');
+  const retry = det.find(d => /RetryInfo$/.test(tipoDi(d)));
+  const sec = retry && /^([\d.]+)s$/.test(_str(retry.retryDelay)) ? parseFloat(retry.retryDelay) : parseFloat((msg.match(/retry in ([\d.]+)\s*s/i) || [])[1]);
+  if (Number.isFinite(sec)) out.attesaMs = Math.round(sec * 1000);
+  return out;
+}
+
+/** Ora "da orologio" di Los Angeles per un istante (Intl gestisce l'ora legale USA). */
+function _oraLosAngeles(ms) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23',
+    hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(ms).map(x => [x.type, x.value]));
+  return { h: +p.hour, m: +p.minute, s: +p.second };
+}
+/** Prossima mezzanotte di Los Angeles dopo `adessoMs`: è quando Google azzera le quote giornaliere. */
+function prossimaMezzanotteLosAngeles(adessoMs) {
+  const o = _oraLosAngeles(adessoMs);
+  const daMezzanotte = ((o.h * 60 + o.m) * 60 + o.s) * 1000 + (((adessoMs % 1000) + 1000) % 1000);
+  let t = adessoMs - daMezzanotte + 24 * 3600000;
+  const h = _oraLosAngeles(t).h;   // se in mezzo c'è il cambio d'ora si cade sulle 23 o sull'1
+  if (h === 23) t += 3600000; else if (h === 1) t -= 3600000;
+  return t;
+}
+/** Fino a quando non chiedere più nulla a Gemini dopo un 429 (`info` da leggiLimiteGemini). */
+function finePausaGemini(info, adessoMs) {
+  const tipo = info && info.tipo;
+  if (tipo === 'giorno' || tipo === 'zero') return prossimaMezzanotteLosAngeles(adessoMs);
+  const attesa = info && Number.isFinite(info.attesaMs) ? info.attesaMs : 60000;
+  return adessoMs + attesa;
+}
+/** Pausa salvata (testo JSON di localStorage) ancora valida, oppure null se manca, è scaduta o è rovinata. */
+function leggiPausaGemini(raw, adessoMs) {
+  let o;
+  try { o = JSON.parse(raw); } catch (_) { return null; }
+  if (!o || typeof o !== 'object' || Array.isArray(o) || typeof o.fino !== 'number' || !Number.isFinite(o.fino) || o.fino <= adessoMs) return null;
+  return { fino: o.fino, motivo: _str(o.motivo).slice(0, 200) };
+}
+
+function _messaggio429(info, d) {
+  const mod = info && info.modello ? '"' + info.modello + '"' : '';
+  const lim = info && Number.isFinite(info.limite) ? info.limite : null;
+  switch (info && info.tipo) {
+    case 'zero': return 'il modello ' + (mod ? mod + ' ' : '') + 'non è incluso nel piano gratuito della tua chiave (limite 0)';
+    case 'giorno': return 'quota giornaliera gratuita esaurita' + (lim !== null ? ' (' + lim + ' richieste al giorno' + (mod ? ' per ' + mod : '') + ')' : (mod ? ' (' + mod + ')' : ''));
+    case 'minuto': return 'troppe richieste in un minuto' + (lim !== null ? ' (limite ' + lim + ' al minuto)' : '');
+    default: return 'quota gratuita esaurita o troppe richieste' + (d ? ' (' + d + ')' : '');
+  }
+}
+
+/** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). Per il 429, `info` da leggiLimiteGemini. */
+function messaggioErroreGemini(status, dettaglio, info) {
   const d = String(dettaglio || '').slice(0, 160);
   if (status === 400 && /api key|api_key/i.test(d)) return 'chiave API non valida: controllala in Impostazioni';
   if (status === 400) return 'richiesta rifiutata da Gemini' + (d ? ' (' + d + ')' : '');
   if (status === 401 || status === 403) return 'chiave API non autorizzata o non abilitata per questo modello';
   if (status === 404) return 'modello non trovato' + (d ? ' (' + d + ')' : '') + ': controlla il nome del modello in Impostazioni';
-  if (status === 429) return 'quota gratuita esaurita o troppe richieste: riprova tra poco';
+  if (status === 429) return _messaggio429(info, d);
   if (status >= 500) return 'servizio Gemini temporaneamente non disponibile';
   return 'errore Gemini ' + status;
 }
@@ -770,7 +837,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
