@@ -620,12 +620,14 @@ function normalizzaRispostaGemini(raw, categorie) {
  * Sceglie il modello Gemini migliore tra quelli che la chiave può usare.
  * `elenco`: risposta di models.list ([{name:'models/...', supportedGenerationMethods:[...]}]).
  * Preferenze: alias "flash-latest" > flash stabile più recente > altro flash > altro gemini. Mai lite/preview/image/tts/live.
+ * `escludi`: nomi da non proporre (es. il modello appena ritirato, che Google può ancora elencare).
  */
-function scegliModelloGemini(elenco) {
+function scegliModelloGemini(elenco, escludi = []) {
   const tutti = (Array.isArray(elenco) ? elenco : []).map(m => ({
     nome: String((m && m.name) || '').replace(/^models\//, ''),
     metodi: (m && (m.supportedGenerationMethods || m.metodi)) || []
-  })).filter(m => /^gemini-/.test(m.nome) && m.metodi.includes('generateContent') && !/(image|tts|live|embedding|audio|robotics|computer|learnlm|vision)/.test(m.nome));
+  })).filter(m => /^gemini-/.test(m.nome) && m.metodi.includes('generateContent') && !escludi.includes(m.nome)
+    && !/(image|tts|live|embedding|audio|robotics|computer|learnlm|vision)/.test(m.nome));
   if (!tutti.length) return null;
   const versione = n => { const v = n.match(/gemini-(\d+(?:\.\d+)?)/); return v ? parseFloat(v[1]) : 0; };
   const migliore = lista => lista.sort((a, b) => versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length)[0];
@@ -637,36 +639,6 @@ function scegliModelloGemini(elenco) {
   if (flash.length) return migliore(flash).nome;
   const altri = tutti.filter(m => !/(lite|preview|exp|thinking)/.test(m.nome));
   return (altri.length ? migliore(altri) : migliore(tutti)).nome;
-}
-
-/**
- * Modelli di riserva da provare quando quello configurato non risponde. Stessi filtri di
- * scegliModelloGemini, esclusi quelli in `escludi` e i "pro" (lenti). Ordine: flash stabili (più
- * recenti prima), flash-lite stabili, altri alias *-latest, altri flash, il resto (preview/exp).
- * Se le versioni "flash" stabili sono più di `max` (capita appena Google ne rilascia tante in poco
- * tempo), l'ultimo posto va alla più vecchia: le versioni appena uscite possono essere sovraccariche
- * tutte insieme, mentre una più matura ha più probabilità di avere capacità libera.
- */
-function alternativeGemini(elenco, escludi = [], max = 3) {
-  const no = new Set(escludi);
-  const rango = n => /^gemini-\d+(\.\d+)?-flash$/.test(n) ? 0
-    : /^gemini-\d+(\.\d+)?-flash-lite$/.test(n) ? 1
-    : /-latest$/.test(n) ? 2
-    : /flash/.test(n) && !/(preview|exp|thinking)/.test(n) ? 3 : 4;
-  const versione = n => { const v = n.match(/gemini-(\d+(?:\.\d+)?)/); return v ? parseFloat(v[1]) : 0; };
-  const tutti = (Array.isArray(elenco) ? elenco : [])
-    .map(m => ({ nome: String((m && m.name) || '').replace(/^models\//, ''), metodi: (m && (m.supportedGenerationMethods || m.metodi)) || [] }))
-    .filter(m => /^gemini-/.test(m.nome) && m.metodi.includes('generateContent') && !no.has(m.nome)
-      && !/(image|tts|live|embedding|audio|robotics|computer|learnlm|vision)/.test(m.nome) && !/(^|-)pro(-|$)/.test(m.nome))
-    .sort((a, b) => rango(a.nome) - rango(b.nome) || versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length);
-  const max2 = Math.max(0, max);
-  const risultato = tutti.slice(0, max2).map(m => m.nome);
-  const stabili = tutti.filter(m => rango(m.nome) === 0);
-  if (stabili.length > max2 && max2 > 0) {
-    const piuVecchia = stabili[stabili.length - 1].nome;
-    if (!risultato.includes(piuVecchia)) risultato[risultato.length - 1] = piuVecchia;
-  }
-  return risultato;
 }
 
 /** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). */
@@ -798,7 +770,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, alternativeGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
