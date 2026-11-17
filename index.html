@@ -2087,8 +2087,8 @@ table.data tbody tr { transition: background var(--t-fast); }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.17d';
-const APP_BUILD_NOTE = 'Gemini: tra i modelli di riserva si tiene sempre anche il più maturo, non solo i più recenti (che possono essere sovraccarichi tutti insieme appena usciti)';
+const APP_VERSION = '2026.11.17e';
+const APP_BUILD_NOTE = 'Gemini: una sola richiesta per scontrino, pausa automatica quando la quota gratuita finisce (con il limite superato), niente più raffiche di modelli di riserva';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3512,7 +3512,8 @@ ocrInput.addEventListener('change', gestisciSelezioneFile);
 
 /* ---------- Gemini: configurazione e client ---------- */
 const IA_KEY = 'tenuta-spese.ia';   // SOLO localStorage del dispositivo: mai in `stato`, quindi mai nei backup
-const IA_MODELLO_DEFAULT = 'gemini-2.5-flash';
+const IA_MODELLO_DEFAULT = 'gemini-flash-latest';
+const IA_PAUSA_KEY = 'tenuta-spese.ia-pausa';   // dopo un 429 nessuna richiesta fino a `fino` (solo dispositivo, mai nei backup)
 function configIA() {
   let c = {};
   try { c = JSON.parse(localStorage.getItem(IA_KEY) || '{}') || {}; } catch (_) {}
@@ -3520,6 +3521,20 @@ function configIA() {
 }
 function salvaConfigIA(c) { try { localStorage.setItem(IA_KEY, JSON.stringify(c)); return true; } catch (_) { return false; } }
 const geminiPronto = () => { const c = configIA(); return c.attivo && c.chiave.length > 10; };
+const oraBreve = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+function pausaGemini() {
+  let raw = null;
+  try { raw = localStorage.getItem(IA_PAUSA_KEY); } catch (_) { return null; }
+  const p = leggiPausaGemini(raw, Date.now());
+  if (!p && raw !== null) togliPausaGemini();
+  return p;
+}
+function mettiInPausaGemini(info, motivo) {
+  const fino = finePausaGemini(info, Date.now());
+  try { localStorage.setItem(IA_PAUSA_KEY, JSON.stringify({ fino, motivo })); } catch (_) {}
+  return fino;
+}
+function togliPausaGemini() { try { localStorage.removeItem(IA_PAUSA_KEY); } catch (_) {} }
 
 /** Immagine -> JPEG ridotto (lato max `max` px): meno dati inviati, richiesta più veloce. */
 function ridimensionaJpeg(dataUrl, max = 1600, qualita = 0.8) {
@@ -3550,6 +3565,12 @@ async function chiamaGemini(corpo, ia, timeoutMs = 90000) {
 }
 
 async function richiestaGemini(corpo, ia, timeoutMs) {
+  const pausa = pausaGemini();
+  if (pausa) {
+    const err = new Error('Gemini in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo);
+    err.pausa = true;
+    throw err;
+  }
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -3560,11 +3581,16 @@ async function richiestaGemini(corpo, ia, timeoutMs) {
       signal: ctrl.signal
     });
     if (!res.ok) {
-      let det = '';
-      try { det = (await res.json()).error?.message || ''; } catch (_) {}
-      const err = new Error(messaggioErroreGemini(res.status, det));
+      let corpoErr = null;
+      try { corpoErr = await res.json(); } catch (_) {}
+      const det = corpoErr?.error?.message || '';
+      const info = res.status === 429 ? leggiLimiteGemini(corpoErr) : null;
+      let messaggio = messaggioErroreGemini(res.status, det, info);
+      if (info) messaggio += ' — nessuna nuova richiesta fino alle ' + oraBreve(mettiInPausaGemini(info, messaggio));
+      const err = new Error(messaggio);
       err.status = res.status;
       err.dettaglio = det;
+      if (info) err.limite = info;
       throw err;
     }
     const j = await res.json();
@@ -3617,50 +3643,30 @@ async function elencaModelliGemini(chiave, timeoutMs = 20000) {
 }
 
 /**
- * Il modello configurato ha smesso di funzionare, per sempre (ritirato/rinominato: 404) o per ora
- * (sovraccarico, non risponde in tempo): cerca un'alternativa che risponda alla STESSA richiesta,
- * la salva come nuova configurazione (così la prossima scansione la usa subito, senza passaggi
- * manuali in Impostazioni) e restituisce {testo, modello}. Salva solo dopo aver verificato che
- * l'alternativa risponde davvero, per non tenere un modello che non funziona.
+ * Google ha ritirato il modello configurato (404): sceglie dall'elenco quello da usare, escluso
+ * quello rotto (Google può ancora elencarlo). Non salva: lo fa chi lo usa, dopo averlo provato.
  */
-async function correggiModelloGemini(ia, corpo, inesistente) {
-  const elenco = await elencaModelliGemini(ia.chiave);
-  if (inesistente) {
-    const nuovo = scegliModelloGemini(elenco);
-    if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave (controlla che sia abilitata in Google AI Studio)');
-    const testo = await chiamaGemini(corpo, { ...ia, modello: nuovo });
-    salvaConfigIA({ ...configIA(), modello: nuovo });
-    return { testo, modello: nuovo };
-  }
-  // 4 riserve: oltre ai "flash" stabili entra anche un "lite" (più veloce, spesso meno carico)
-  const alt = alternativeGemini(elenco, [ia.modello], 4);
-  if (!alt.length) throw new Error('nessun modello alternativo disponibile con questa chiave');
-  try {
-    const { testo, modello } = await Promise.any(alt.map(m =>
-      chiamaGemini(corpo, { ...ia, modello: m }, 25000).then(testo => ({ testo, modello: m }))
-    ));
-    salvaConfigIA({ ...configIA(), modello });
-    return { testo, modello };
-  } catch (agg) {
-    throw new Error('nessun modello alternativo ha risposto (' + (agg.errors || [agg]).map(e => e.message).join('; ') + ')');
-  }
+async function correggiModelloGemini(ia) {
+  const nuovo = scegliModelloGemini(await elencaModelliGemini(ia.chiave), [ia.modello]);
+  if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave (controlla che sia abilitata in Google AI Studio)');
+  return nuovo;
 }
 
 async function analizzaConGemini(pagine) {
-  let ia = configIA();
+  const ia = configIA();
   const imgs = [];
   for (const p of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(p));
   const corpo = costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI);
   let testo;
   try { testo = await chiamaGemini(corpo, ia, 40000); }
   catch (e) {
-    if (e.status !== 404 && !e.timeout && !(e.status >= 500)) throw e;
-    // modello ritirato/rinominato, non risponde in tempo, oppure il servizio Gemini dà un errore
-    // temporaneo (5xx, es. "temporaneamente non disponibile"): si cerca un'alternativa e si tiene
-    const modelloRotto = ia.modello;
-    const r = await correggiModelloGemini(ia, corpo, e.status === 404);
-    testo = r.testo;
-    toast('Modello Gemini "' + modelloRotto + '" non ' + (e.status === 404 ? 'esiste più' : 'risponde') + ': passato automaticamente a "' + r.modello + '".', 'info', 6000);
+    // Solo un modello ritirato giustifica una seconda richiesta. Lento, sovraccarico o quota
+    // esaurita: provare altri modelli consuma la quota senza risolvere, si usa l'OCR locale.
+    if (e.status !== 404) throw e;
+    const nuovo = await correggiModelloGemini(ia);
+    testo = await chiamaGemini(corpo, { ...ia, modello: nuovo }, 40000);
+    salvaConfigIA({ ...configIA(), modello: nuovo });
+    toast('Modello Gemini "' + ia.modello + '" ritirato da Google: passato automaticamente a "' + nuovo + '".', 'info', 6000);
   }
   return { lettura: normalizzaRispostaGemini(testo, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null };
 }
@@ -3705,8 +3711,12 @@ async function gestisciFileOCR(file) {
     if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type)) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
     }
-    const usaGemini = geminiPronto();
+    const pausa = geminiPronto() ? pausaGemini() : null;   // dopo un 429 non si chiede nulla a Gemini
+    const usaGemini = geminiPronto() && !pausa;
     const haOcr = typeof Tesseract !== 'undefined';
+    if (!haOcr && pausa) {
+      throw new Error('Gemini in pausa fino alle ' + oraBreve(pausa.fino) + ' e OCR locale non caricato: inserisci i prodotti a mano.');
+    }
     if (!haOcr && !usaGemini) {
       throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
     }
@@ -3734,6 +3744,7 @@ async function gestisciFileOCR(file) {
     pGem.catch(e => { lettura.geminiErrore = e.message; });
 
     let parsed = null, fonte = 'ocr', avvisoIA = '';
+    if (pausa) avvisoIA = 'Gemini in pausa fino alle ' + oraBreve(pausa.fino) + ' (' + pausa.motivo + '): uso l\'OCR locale.';
     if (usaGemini) {
       // Gemini è un di più: se l'OCR locale ha finito e Gemini non ha ancora risposto, gli si danno
       // pochi secondi e poi si prosegue (mai minuti di attesa). Se l'OCR non è disponibile o fallisce
@@ -5720,10 +5731,14 @@ async function renderIA() {
   } catch (e) { info.textContent = 'Lettura casi non riuscita: ' + e.message; }
 }
 document.getElementById('btn-ia-salva').addEventListener('click', () => {
+  const prima = configIA();
+  const chiave = document.getElementById('ia-chiave').value.trim();
+  const modello = document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT;
+  if (chiave !== prima.chiave || modello !== prima.modello) togliPausaGemini();   // chiave o modello nuovi: la pausa non vale più
   const ok = salvaConfigIA({
     attivo: document.getElementById('ia-attivo').checked,
-    chiave: document.getElementById('ia-chiave').value.trim(),
-    modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT,
+    chiave,
+    modello,
     salvaFoto: document.getElementById('ia-foto').checked
   });
   toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
@@ -5742,36 +5757,15 @@ async function provaGemini(ia, timeoutMs = 45000) {
 }
 const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { maxOutputTokens: 1024 } };
 
-/**
- * Il modello configurato non risponde in tempo. Distingue "Google non è raggiungibile" da "è solo
- * quel modello a non rispondere": chiede l'elenco modelli e prova insieme alcuni altri (vince il primo).
- */
-async function cercaModelloCheRisponde(ia) {
-  mostraStatoIA('"' + ia.modello + '" non risponde: controllo la connessione a Google…', 'var(--text-muted)');
-  const t0 = Date.now();
-  let elenco;
-  try { elenco = await elencaModelliGemini(ia.chiave); }
-  catch (e) { throw new Error('anche l\'elenco dei modelli non arriva (' + e.message + '): la connessione verso Google è bloccata o troppo lenta, il problema non è il modello'); }
-  const sec = ((Date.now() - t0) / 1000).toFixed(1);
-  const alt = alternativeGemini(elenco, [ia.modello], 5);
-  if (!alt.length) throw new Error('Google è raggiungibile (elenco modelli in ' + sec + ' s) ma "' + ia.modello + '" non risponde e non ci sono altri modelli da provare');
-  mostraStatoIA('Google risponde (' + sec + ' s). Provo anche: ' + alt.join(', ') + '…', 'var(--text-muted)');
-  try {
-    const t1 = Date.now();
-    const modello = await Promise.any(alt.map(m => provaGemini({ ...ia, modello: m }, 25000).then(() => m, e => { throw new Error(m + ': ' + e.message); })));
-    return { ia: { ...ia, modello }, ms: Date.now() - t1 };
-  } catch (agg) {
-    const dettagli = (agg.errors || [agg]).map(e => e.message).join('; ');
-    throw new Error('Google è raggiungibile (elenco modelli in ' + sec + ' s) ma i modelli provati non rispondono (' + dettagli + '). Servizio sovraccarico o limiti della chiave: riprova più tardi');
-  }
-}
-
 document.getElementById('btn-ia-test').addEventListener('click', async () => {
   let ia = iaDaCampi();
   const originale = ia.modello;
   if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
+  const pausa = pausaGemini();
+  const salvata = configIA();
+  if (pausa && (ia.chiave !== salvata.chiave || ia.modello !== salvata.modello)) togliPausaGemini();   // la pausa riguarda chiave e modello salvati
+  else if (pausa) { mostraStatoIA('Gemini è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata: per riprovare subito incolla un\'altra chiave o scegli un altro modello.', 'var(--warning)'); return; }
   mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
-  let lento = '';   // modello originale che non rispondeva, se ne abbiamo trovato uno che risponde
   try {
     const t0 = Date.now();
     let ms = null;
@@ -5779,28 +5773,22 @@ document.getElementById('btn-ia-test').addEventListener('click', async () => {
     catch (e) {
       if (e.status === 404) {
         // Il modello indicato non esiste (più): chiedo a Google quale usare con questa chiave.
-        mostraStatoIA('Il modello "' + ia.modello + '" non esiste: cerco quello giusto…', 'var(--text-muted)');
-        const elenco = await elencaModelliGemini(ia.chiave);
-        const nuovo = scegliModelloGemini(elenco);
-        if (!nuovo) throw new Error('nessun modello Gemini utilizzabile con questa chiave');
-        ia = { ...ia, modello: nuovo };
+        mostraStatoIA('Il modello "' + ia.modello + '" non esiste più: cerco quello giusto…', 'var(--text-muted)');
+        ia = { ...ia, modello: await correggiModelloGemini(ia) };
         const t2 = Date.now();
         await provaGemini(ia);
         ms = Date.now() - t2;
       } else if (e.timeout || e.status >= 500) {
-        // Non risponde in tempo, oppure il servizio dà un errore temporaneo (5xx): si cercano alternative.
-        lento = ia.modello;
-        const r = await cercaModelloCheRisponde(ia);
-        ia = r.ia; ms = r.ms;
+        // Provare altri modelli in raffica consuma la quota senza risolvere: si riprova più tardi.
+        throw new Error('Gemini ora è lento o sovraccarico (' + e.message + '): riprova tra qualche minuto');
       } else throw e;
     }
     document.getElementById('ia-modello').value = ia.modello;
-    // Trovato un modello diverso che funziona: lo tengo subito, senza passaggi manuali.
     if (ia.modello !== originale) salvaConfigIA(ia);
-    mostraStatoIA(lento
-      ? 'Il modello "' + lento + '" non risponde: passato automaticamente a "' + ia.modello + '" (salvato' + tempoRisposta(ms) + ').'
+    mostraStatoIA(ia.modello !== originale
+      ? 'Il modello "' + originale + '" è stato ritirato da Google: passato automaticamente a "' + ia.modello + '" (salvato' + tempoRisposta(ms) + ').'
       : 'Connessione riuscita con il modello "' + ia.modello + '"' + tempoRisposta(ms) + '.', 'var(--success)');
-  } catch (e) { mostraStatoIA('Non funziona con il modello "' + (lento || ia.modello) + '": ' + e.message + '.', 'var(--danger)'); }
+  } catch (e) { mostraStatoIA('Non funziona con il modello "' + ia.modello + '": ' + e.message + '.', 'var(--danger)'); }
 });
 document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
   const ia = iaDaCampi();

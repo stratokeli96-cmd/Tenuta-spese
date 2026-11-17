@@ -10,7 +10,7 @@
 
 // Deve essere IDENTICA a APP_VERSION in index.html (lo verifica `node --test`).
 // Cambia ad ogni release e forza l'eliminazione della shell cache precedente.
-const CACHE_VERSION = '2026.11.17d';
+const CACHE_VERSION = '2026.11.17e';
 const SHELL_CACHE = 'tenuta-shell-' + CACHE_VERSION;
 // La cache degli asset CDN (Chart.js, Tesseract, tessdata...) NON è versionata:
 // sono file immutabili (versione nell'URL) e riscaricarli ad ogni release
@@ -87,6 +87,10 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
+
+  // API Gemini: sempre dalla rete. In cache l'elenco modelli resterebbe quello del primo giorno
+  // (stesso URL per ogni chiave) e la sostituzione di un modello ritirato sceglierebbe da lì.
+  if (url.hostname === 'generativelanguage.googleapis.com') return;
 
   // Navigazioni / app shell same-origin: network-first con fallback a cache.
   // Così gli aggiornamenti arrivano online, ma offline si serve la copia salvata.
