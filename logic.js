@@ -643,6 +643,9 @@ function scegliModelloGemini(elenco) {
  * Modelli di riserva da provare quando quello configurato non risponde. Stessi filtri di
  * scegliModelloGemini, esclusi quelli in `escludi` e i "pro" (lenti). Ordine: flash stabili (più
  * recenti prima), flash-lite stabili, altri alias *-latest, altri flash, il resto (preview/exp).
+ * Se le versioni "flash" stabili sono più di `max` (capita appena Google ne rilascia tante in poco
+ * tempo), l'ultimo posto va alla più vecchia: le versioni appena uscite possono essere sovraccariche
+ * tutte insieme, mentre una più matura ha più probabilità di avere capacità libera.
  */
 function alternativeGemini(elenco, escludi = [], max = 3) {
   const no = new Set(escludi);
@@ -651,12 +654,19 @@ function alternativeGemini(elenco, escludi = [], max = 3) {
     : /-latest$/.test(n) ? 2
     : /flash/.test(n) && !/(preview|exp|thinking)/.test(n) ? 3 : 4;
   const versione = n => { const v = n.match(/gemini-(\d+(?:\.\d+)?)/); return v ? parseFloat(v[1]) : 0; };
-  return (Array.isArray(elenco) ? elenco : [])
+  const tutti = (Array.isArray(elenco) ? elenco : [])
     .map(m => ({ nome: String((m && m.name) || '').replace(/^models\//, ''), metodi: (m && (m.supportedGenerationMethods || m.metodi)) || [] }))
     .filter(m => /^gemini-/.test(m.nome) && m.metodi.includes('generateContent') && !no.has(m.nome)
       && !/(image|tts|live|embedding|audio|robotics|computer|learnlm|vision)/.test(m.nome) && !/(^|-)pro(-|$)/.test(m.nome))
-    .sort((a, b) => rango(a.nome) - rango(b.nome) || versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length)
-    .slice(0, Math.max(0, max)).map(m => m.nome);
+    .sort((a, b) => rango(a.nome) - rango(b.nome) || versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length);
+  const max2 = Math.max(0, max);
+  const risultato = tutti.slice(0, max2).map(m => m.nome);
+  const stabili = tutti.filter(m => rango(m.nome) === 0);
+  if (stabili.length > max2 && max2 > 0) {
+    const piuVecchia = stabili[stabili.length - 1].nome;
+    if (!risultato.includes(piuVecchia)) risultato[risultato.length - 1] = piuVecchia;
+  }
+  return risultato;
 }
 
 /** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). */

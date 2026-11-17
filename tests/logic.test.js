@@ -454,3 +454,11 @@ test('alternativeGemini: riserve ordinate (flash stabili, lite, alias), senza es
   assert.deepEqual(L.alternativeGemini(null), []);
   assert.deepEqual(L.alternativeGemini(elenco, [], 0), []);
 });
+
+test('alternativeGemini: tante versioni "flash" stabili appena uscite (e magari tutte sovraccariche insieme) non devono escludere la più matura', () => {
+  const m = (n, met = ['generateContent']) => ({ name: 'models/' + n, supportedGenerationMethods: met });
+  const elenco = [m('gemini-3.8-flash'), m('gemini-3.7-flash'), m('gemini-3.6-flash'), m('gemini-2.5-flash'), m('gemini-2.0-flash')];
+  // Senza riserva: top 3 per versione sarebbe 3.8/3.7/3.6, lasciando fuori le più mature (2.5/2.0).
+  // Con la riserva, l'ultimo slot va alla più vecchia disponibile.
+  assert.deepEqual(L.alternativeGemini(elenco, [], 3), ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-2.0-flash']);
+});
