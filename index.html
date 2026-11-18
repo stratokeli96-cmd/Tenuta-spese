@@ -1400,6 +1400,9 @@ table.data tbody tr { transition: background var(--t-fast); }
   table.voci-cards td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 400; color: var(--text-dim); }
   table.voci-cards tbody tr:hover { background: var(--bg-elev-2); }
 }
+.ia-blocco { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+.ia-blocco-testa { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.ia-badge { font-size: 12px; color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -1827,23 +1830,50 @@ table.data tbody tr { transition: background var(--t-fast); }
       </div>
 
       <div class="widget" style="margin-top: var(--sp-lg);" id="widget-ia">
-        <div class="section-title">IA per gli scontrini (Gemini)</div>
+        <div class="section-title">IA per gli scontrini</div>
         <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 10px;">
-          Con Gemini la <strong>foto dello scontrino viene inviata a Google</strong> per leggerla con più precisione (piano gratuito: le richieste possono essere usate da Google per migliorare i suoi servizi).
-          Resta disattivato finché non lo abiliti. La chiave è salvata <strong>solo su questo dispositivo</strong> e non finisce nei backup.
+          Ordine di lettura: <strong>Gemini → OpenRouter → OCR del telefono</strong>. Si passa al successivo solo se il precedente non è configurato, è in pausa o non risponde.
+          Le chiavi sono salvate <strong>solo su questo dispositivo</strong> e non finiscono nei backup.
         </p>
-        <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="ia-attivo" /> Usa Gemini per analizzare gli scontrini</label>
-        <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
-          <div class="form-group"><label class="form-label">Chiave API (Google AI Studio)</label><input type="password" id="ia-chiave" autocomplete="off" placeholder="incolla qui la chiave" /></div>
-          <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" list="ia-modelli" placeholder="gemini-2.5-flash" /><datalist id="ia-modelli"></datalist></div>
+
+        <div class="ia-blocco">
+          <div class="ia-blocco-testa"><strong>Gemini (Google)</strong><span id="ia-gem-stato" class="ia-badge"></span></div>
+          <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
+            La <strong>foto dello scontrino viene inviata a Google</strong> per leggerla (piano gratuito: le richieste possono essere usate da Google per migliorare i suoi servizi).
+          </p>
+          <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="ia-attivo" /> Usa Gemini</label>
+          <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
+            <div class="form-group"><label class="form-label">Chiave API (Google AI Studio)</label><input type="password" id="ia-chiave" autocomplete="off" placeholder="incolla qui la chiave" /></div>
+            <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" list="ia-modelli" placeholder="gemini-2.5-flash" /><datalist id="ia-modelli"></datalist></div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="btn-ia-test">Prova la connessione</button>
+            <button class="btn btn-ghost" id="btn-ia-modelli" title="Chiede a Google quali modelli può usare la tua chiave">Cerca modello</button>
+          </div>
+          <p id="ia-stato" style="font-size:13px; margin-top:8px;"></p>
         </div>
+
+        <div class="ia-blocco">
+          <div class="ia-blocco-testa"><strong>OpenRouter (riserva)</strong><span id="or-badge" class="ia-badge"></span></div>
+          <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
+            Usa solo modelli gratuiti (":free"). Con OpenRouter la <strong>foto viene inviata a OpenRouter e al fornitore del modello gratuito</strong>, che può usarla per migliorare i suoi servizi. Chiave gratuita su openrouter.ai → Keys.
+          </p>
+          <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="or-attivo" /> Usa OpenRouter</label>
+          <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
+            <div class="form-group"><label class="form-label">Chiave API (OpenRouter)</label><input type="password" id="or-chiave" autocomplete="off" placeholder="sk-or-…" /></div>
+            <div class="form-group"><label class="form-label">Modello</label><input type="text" id="or-modello" list="or-modelli" placeholder="scelta automatica" /><datalist id="or-modelli"></datalist></div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="btn-or-test">Prova la connessione</button>
+            <button class="btn btn-ghost" id="btn-or-modelli" title="Chiede a OpenRouter i modelli gratuiti che leggono immagini">Cerca modello</button>
+          </div>
+          <p id="or-stato" style="font-size:13px; margin-top:8px;"></p>
+        </div>
+
         <label style="display:flex; gap:8px; align-items:center; margin:8px 0;"><input type="checkbox" id="ia-foto" /> Conserva una copia ridotta della foto nei casi di prova (serve a migliorare l'OCR)</label>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="btn btn-primary" id="btn-ia-salva">Salva</button>
-          <button class="btn btn-secondary" id="btn-ia-test">Prova la connessione</button>
-          <button class="btn btn-ghost" id="btn-ia-modelli" title="Chiede a Google quali modelli può usare la tua chiave">Cerca modello</button>
         </div>
-        <p id="ia-stato" style="font-size:13px; margin-top:8px;"></p>
 
         <div class="section-title" style="margin-top: var(--sp-lg);">Casi di prova per migliorare l'OCR</div>
         <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
@@ -3517,7 +3547,8 @@ const IA_PAUSA_KEY = 'tenuta-spese.ia-pausa';   // dopo un 429 nessuna richiesta
 function configIA() {
   let c = {};
   try { c = JSON.parse(localStorage.getItem(IA_KEY) || '{}') || {}; } catch (_) {}
-  return { attivo: !!c.attivo, chiave: String(c.chiave || ''), modello: String(c.modello || IA_MODELLO_DEFAULT).trim() || IA_MODELLO_DEFAULT, salvaFoto: !!c.salvaFoto };
+  return { attivo: !!c.attivo, chiave: String(c.chiave || ''), modello: String(c.modello || IA_MODELLO_DEFAULT).trim() || IA_MODELLO_DEFAULT, salvaFoto: !!c.salvaFoto,
+    orAttivo: !!c.orAttivo, orChiave: String(c.orChiave || ''), orModello: String(c.orModello || '').trim(), orJson: !!c.orJson };
 }
 function salvaConfigIA(c) { try { localStorage.setItem(IA_KEY, JSON.stringify(c)); return true; } catch (_) { return false; } }
 const geminiPronto = () => { const c = configIA(); return c.attivo && c.chiave.length > 10; };
@@ -3705,6 +3736,99 @@ async function analizzaConGemini(pagine, timeoutMs = 25000) {
       : 'Modello Gemini "' + ia.modello + '" ritirato da Google: passato automaticamente a "' + r.modello + '".', 'info', 6000);
   }
   return { lettura: normalizzaRispostaGemini(r.risultato, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null, modello: r.modello };
+}
+
+/* ---------- OpenRouter: secondo servizio (modelli gratuiti ":free") ---------- */
+const OR_API = 'https://openrouter.ai/api/v1';
+const OR_PAUSA_KEY = 'tenuta-spese.ia-pausa-openrouter';   // pausa separata da Gemini (solo dispositivo)
+const openRouterPronto = () => { const c = configIA(); return c.orAttivo && c.orChiave.length > 10; };
+function pausaOpenRouter() {
+  let raw = null;
+  try { raw = localStorage.getItem(OR_PAUSA_KEY); } catch (_) { return null; }
+  const p = leggiPausaGemini(raw, Date.now());   // stesso formato {fino, motivo}
+  if (!p && raw !== null) togliPausaOpenRouter();
+  return p;
+}
+function togliPausaOpenRouter() { try { localStorage.removeItem(OR_PAUSA_KEY); } catch (_) {} }
+/** Dopo un 429: Retry-After se c'è, altrimenti 60 s; limite giornaliero → mezzanotte UTC (azzeramento OpenRouter). */
+function mettiInPausaOpenRouter(motivo, retryAfterSec, dettaglio) {
+  const ora = Date.now();
+  let fino = ora + 60000;
+  if (/per[\s-]?day|daily/i.test(String(dettaglio || ''))) { const d = new Date(ora); fino = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); }
+  else if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) fino = ora + Math.min(retryAfterSec, 86400) * 1000;
+  try { localStorage.setItem(OR_PAUSA_KEY, JSON.stringify({ fino, motivo })); } catch (_) {}
+  return fino;
+}
+
+async function richiestaOpenRouter(percorso, chiave, opzioni = {}, timeoutMs = 25000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(OR_API + percorso, {
+      method: opzioni.corpo ? 'POST' : 'GET',
+      cache: 'no-store',
+      headers: { 'Authorization': 'Bearer ' + chiave, 'X-Title': 'Tenuta Spese', ...(opzioni.corpo ? { 'Content-Type': 'application/json' } : {}) },   // chiave in header, mai nell'URL
+      body: opzioni.corpo ? JSON.stringify(opzioni.corpo) : undefined,
+      signal: ctrl.signal
+    });
+    let j = null;
+    try { j = await res.json(); } catch (_) {}
+    // OpenRouter può rispondere 200 con un errore del fornitore nel corpo.
+    const errCorpo = j && j.error ? j.error : null;
+    if (!res.ok || errCorpo) {
+      const status = !res.ok ? res.status : (Number(errCorpo.code) || 500);
+      const det = (errCorpo && (errCorpo.metadata?.raw || errCorpo.message)) || '';
+      let messaggio = messaggioErroreOpenRouter(status, String(det));
+      if (status === 429) messaggio += ' — nessuna nuova richiesta fino alle ' + oraBreve(mettiInPausaOpenRouter(messaggio, parseFloat(res.headers.get('Retry-After')), String(det)));
+      const err = new Error(messaggio);
+      err.status = status;
+      err.dettaglio = String(det);
+      throw err;
+    }
+    return j;
+  } catch (e) {
+    if (e.name === 'AbortError') { const err = new Error('OpenRouter non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi'); err.timeout = true; throw err; }
+    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
+    throw e;
+  } finally { clearTimeout(t); }
+}
+const modelloOpenRouterRotto = e => e.status === 404 || /no endpoints/i.test(e.dettaglio || '');
+async function scegliModelloOpenRouterDaApi(chiave, escludi = []) {
+  const j = await richiestaOpenRouter('/models', chiave, {}, 20000);
+  const m = scegliModelloOpenRouter(j && j.data, escludi);
+  if (!m) throw new Error('nessun modello gratuito che legge immagini su OpenRouter in questo momento');
+  return m;
+}
+/**
+ * Esegue `esegui(modello)`; senza modello configurato lo sceglie dall'elenco; se il modello non esiste più
+ * o non legge immagini ne sceglie UN altro. -> {risultato, modello: {id, json}, cambiato}
+ */
+async function conModelloOpenRouter(c, esegui) {
+  let m = c.orModello ? { id: c.orModello, json: c.orJson } : null;
+  let cambiato = false;
+  if (!m) { m = await scegliModelloOpenRouterDaApi(c.orChiave); cambiato = true; }
+  try { return { risultato: await esegui(m), modello: m, cambiato }; }
+  catch (e) {
+    if (!modelloOpenRouterRotto(e)) throw e;
+    const nuovo = await scegliModelloOpenRouterDaApi(c.orChiave, [m.id]);
+    return { risultato: await esegui(nuovo), modello: nuovo, cambiato: true };
+  }
+}
+async function analizzaConOpenRouter(pagine, timeoutMs = 25000) {
+  const c = configIA();
+  const p = pausaOpenRouter();
+  if (p) { const err = new Error('OpenRouter in pausa fino alle ' + oraBreve(p.fino) + ': ' + p.motivo); err.pausa = true; throw err; }
+  const imgs = [];
+  for (const pg of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(pg));
+  const r = await conModelloOpenRouter(c, m => richiestaOpenRouter('/chat/completions', c.orChiave,
+    { corpo: costruisciRichiestaOpenRouter(imgs, CATEGORIE_ALIMENTARI, m.id, m.json) }, timeoutMs));
+  if (r.cambiato) {
+    salvaConfigIA({ ...configIA(), orModello: r.modello.id, orJson: r.modello.json });
+    if (c.orModello) toast('Modello OpenRouter "' + c.orModello + '" non disponibile: passato a "' + r.modello.id + '".', 'info', 6000);
+  }
+  const testo = testoRispostaOpenRouter(r.risultato);
+  if (!testo) throw new Error('risposta vuota da OpenRouter');
+  return { lettura: normalizzaRispostaIA(testo, CATEGORIE_ALIMENTARI, 'OpenRouter'), foto: imgs[0] ? imgs[0].dataUrl : null, modello: r.modello.id };
 }
 
 /** OCR locale (Tesseract) su tutte le pagine; restituisce {testo, parsed}. */
@@ -5753,9 +5877,22 @@ async function renderIA() {
   document.getElementById('ia-chiave').value = c.chiave;
   document.getElementById('ia-modello').value = c.modello;
   document.getElementById('ia-foto').checked = c.salvaFoto;
+  document.getElementById('or-attivo').checked = c.orAttivo;
+  document.getElementById('or-chiave').value = c.orChiave;
+  document.getElementById('or-modello').value = c.orModello;
+  const badge = (attivo, chiave, pausa, modello) => !attivo ? 'non attivo' : chiave.length <= 10 ? 'manca la chiave'
+    : pausa ? 'in pausa fino alle ' + oraBreve(pausa.fino) : 'attivo' + (modello ? ' · ' + modello : '');
+  document.getElementById('ia-gem-stato').textContent = '● ' + badge(c.attivo, c.chiave, pausaGemini(), c.modello);
+  document.getElementById('or-badge').textContent = '● ' + badge(c.orAttivo, c.orChiave, pausaOpenRouter(), c.orModello || 'scelta automatica');
   const st = document.getElementById('ia-stato');
   st.style.color = 'var(--text-muted)';
-  st.textContent = c.attivo ? (c.chiave ? 'Gemini attivo.' : 'Attivo ma manca la chiave: verrà usato solo l\'OCR locale.') : 'Gemini non attivo: si usa solo l\'OCR locale.';
+  const pg = c.attivo ? pausaGemini() : null;
+  st.textContent = pg ? 'Motivo della pausa: ' + pg.motivo : '';
+  const so = document.getElementById('or-stato');
+  so.style.color = 'var(--text-muted)';
+  const po = c.orAttivo ? pausaOpenRouter() : null;
+  so.textContent = po ? 'Motivo della pausa: ' + po.motivo : '';
+  if (!(c.attivo && c.chiave.length > 10) && !(c.orAttivo && c.orChiave.length > 10)) st.textContent = 'Nessun servizio IA attivo: si usa solo l\'OCR del telefono.';
   const info = document.getElementById('ia-casi-info');
   if (!Archivio.ok) { info.textContent = 'Archivio non disponibile su questo browser: i casi di prova non possono essere salvati.'; return; }
   try {
@@ -5771,11 +5908,18 @@ document.getElementById('btn-ia-salva').addEventListener('click', () => {
   const chiave = document.getElementById('ia-chiave').value.trim();
   const modello = document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT;
   if (chiave !== prima.chiave || modello !== prima.modello) togliPausaGemini();   // chiave o modello nuovi: la pausa non vale più
+  const orChiave = document.getElementById('or-chiave').value.trim();
+  const orModello = document.getElementById('or-modello').value.trim();
+  if (orChiave !== prima.orChiave || orModello !== prima.orModello) togliPausaOpenRouter();
   const ok = salvaConfigIA({
     attivo: document.getElementById('ia-attivo').checked,
     chiave,
     modello,
-    salvaFoto: document.getElementById('ia-foto').checked
+    salvaFoto: document.getElementById('ia-foto').checked,
+    orAttivo: document.getElementById('or-attivo').checked,
+    orChiave,
+    orModello,
+    orJson: orModello && orModello === prima.orModello ? prima.orJson : false
   });
   toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
   renderIA();
@@ -5838,6 +5982,48 @@ document.getElementById('btn-ia-modelli').addEventListener('click', async () => 
     document.getElementById('ia-modello').value = scelto;
     mostraStatoIA(nomi.length + ' modelli disponibili. Ho scelto "' + scelto + '": premi Prova la connessione e poi Salva.', 'var(--success)');
   } catch (e) { mostraStatoIA('Non riesco a leggere i modelli: ' + e.message + '.', 'var(--danger)'); }
+});
+
+function mostraStatoOR(testo, colore) { const st = document.getElementById('or-stato'); st.style.color = colore; st.textContent = testo; }
+function orDaCampi() {
+  const c = configIA();
+  const orModello = document.getElementById('or-modello').value.trim();
+  return { ...c, orChiave: document.getElementById('or-chiave').value.trim(), orModello, orJson: orModello === c.orModello ? c.orJson : false };
+}
+document.getElementById('btn-or-test').addEventListener('click', async () => {
+  const c = orDaCampi();
+  if (c.orChiave.length < 10) { mostraStatoOR('Inserisci prima la chiave API di OpenRouter.', 'var(--danger)'); return; }
+  const salvata = configIA();
+  const pausa = pausaOpenRouter();
+  if (pausa && c.orChiave === salvata.orChiave && c.orModello === salvata.orModello) { mostraStatoOR('OpenRouter è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata.', 'var(--warning)'); return; }
+  if (pausa) togliPausaOpenRouter();
+  mostraStatoOR('Provo la connessione…', 'var(--text-muted)');
+  try {
+    let ms = null;
+    const r = await conModelloOpenRouter(c, async m => {
+      const t0 = Date.now();
+      await richiestaOpenRouter('/chat/completions', c.orChiave, { corpo: { model: m.id, max_tokens: 16, messages: [{ role: 'user', content: 'Rispondi solo con la parola: ok' }] } }, 45000);
+      ms = Date.now() - t0;
+    });
+    document.getElementById('or-modello').value = r.modello.id;
+    if (r.cambiato) salvaConfigIA({ ...configIA(), orChiave: c.orChiave, orModello: r.modello.id, orJson: r.modello.json });
+    mostraStatoOR('Connessione riuscita con "' + r.modello.id + '"' + (r.cambiato ? ' (scelto automaticamente e salvato)' : '') + tempoRisposta(ms) + '.', 'var(--success)');
+  } catch (e) { mostraStatoOR('Non funziona' + (c.orModello ? ' con "' + c.orModello + '"' : '') + ': ' + e.message + '.', 'var(--danger)'); }
+});
+document.getElementById('btn-or-modelli').addEventListener('click', async () => {
+  const c = orDaCampi();
+  if (c.orChiave.length < 10) { mostraStatoOR('Inserisci prima la chiave API di OpenRouter.', 'var(--danger)'); return; }
+  mostraStatoOR('Chiedo a OpenRouter i modelli gratuiti…', 'var(--text-muted)');
+  try {
+    const j = await richiestaOpenRouter('/models', c.orChiave, {}, 20000);
+    const ids = [];
+    let m, escl = [];
+    while ((m = scegliModelloOpenRouter(j && j.data, escl))) { ids.push(m.id); escl.push(m.id); }
+    document.getElementById('or-modelli').innerHTML = ids.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    if (!ids.length) { mostraStatoOR('Nessun modello gratuito che legge immagini su OpenRouter in questo momento.', 'var(--danger)'); return; }
+    document.getElementById('or-modello').value = ids[0];
+    mostraStatoOR(ids.length + ' modelli gratuiti con lettura immagini. Ho scelto "' + ids[0] + '": premi Prova la connessione e poi Salva.', 'var(--success)');
+  } catch (e) { mostraStatoOR('Non riesco a leggere i modelli: ' + e.message + '.', 'var(--danger)'); }
 });
 
 document.getElementById('btn-casi-export').addEventListener('click', async () => {

@@ -88,9 +88,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
 
-  // API Gemini: sempre dalla rete. In cache l'elenco modelli resterebbe quello del primo giorno
-  // (stesso URL per ogni chiave) e la sostituzione di un modello ritirato sceglierebbe da lì.
-  if (url.hostname === 'generativelanguage.googleapis.com') return;
+  // API IA (Gemini, OpenRouter): sempre dalla rete. In cache l'elenco modelli resterebbe quello del
+  // primo giorno (stesso URL per ogni chiave) e la sostituzione di un modello sceglierebbe da lì.
+  if (url.hostname === 'generativelanguage.googleapis.com' || url.hostname === 'openrouter.ai') return;
 
   // Navigazioni / app shell same-origin: network-first con fallback a cache.
   // Così gli aggiornamenti arrivano online, ma offline si serve la copia salvata.
