@@ -619,7 +619,7 @@ function normalizzaRispostaGemini(raw, categorie) {
 /**
  * Sceglie il modello Gemini migliore tra quelli che la chiave può usare.
  * `elenco`: risposta di models.list ([{name:'models/...', supportedGenerationMethods:[...]}]).
- * Preferenze: alias "flash-latest" > flash stabile più recente > altro flash > altro gemini. Mai lite/preview/image/tts/live.
+ * Preferenze: flash stabile più recente > alias "flash-latest" > flash-lite stabile > altro flash > altro gemini. Mai preview/image/tts/live.
  * `escludi`: nomi da non proporre (es. il modello appena ritirato, che Google può ancora elencare).
  */
 function scegliModelloGemini(elenco, escludi = []) {
@@ -631,10 +631,13 @@ function scegliModelloGemini(elenco, escludi = []) {
   if (!tutti.length) return null;
   const versione = n => { const v = n.match(/gemini-(\d+(?:\.\d+)?)/); return v ? parseFloat(v[1]) : 0; };
   const migliore = lista => lista.sort((a, b) => versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length)[0];
-  const alias = tutti.find(m => m.nome === 'gemini-flash-latest');
-  if (alias) return alias.nome;
+  // L'alias "-latest" segue l'ultimo modello uscito, che spesso non ha quota gratuita: meglio un flash stabile.
   const stabili = tutti.filter(m => /^gemini-\d+(\.\d+)?-flash$/.test(m.nome));
   if (stabili.length) return migliore(stabili).nome;
+  const alias = tutti.find(m => m.nome === 'gemini-flash-latest');
+  if (alias) return alias.nome;
+  const lite = tutti.filter(m => /^gemini-\d+(\.\d+)?-flash-lite$/.test(m.nome));
+  if (lite.length) return migliore(lite).nome;
   const flash = tutti.filter(m => /flash/.test(m.nome) && !/(lite|preview|exp|thinking)/.test(m.nome));
   if (flash.length) return migliore(flash).nome;
   const altri = tutti.filter(m => !/(lite|preview|exp|thinking)/.test(m.nome));
@@ -665,6 +668,35 @@ function leggiLimiteGemini(corpo) {
   const sec = retry && /^([\d.]+)s$/.test(_str(retry.retryDelay)) ? parseFloat(retry.retryDelay) : parseFloat((msg.match(/retry in ([\d.]+)\s*s/i) || [])[1]);
   if (Number.isFinite(sec)) out.attesaMs = Math.round(sec * 1000);
   return out;
+}
+
+/** Impronta (FNV-1a 32 bit, 8 hex) di una chiave API: lega dati locali alla chiave senza salvarla. */
+function improntaChiave(chiave) {
+  let h = 0x811c9dc5;
+  const s = _str(chiave);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+/** Un 429 che dice "questo modello oggi non si può più usare" (quota 0 o giornaliera, che sono per modello). */
+function quotaModelloFinita(info) { return !!info && (info.tipo === 'zero' || info.tipo === 'giorno'); }
+function _leggiEsclusi(raw) {
+  let o;
+  try { o = JSON.parse(raw); } catch (_) { return null; }
+  if (!o || typeof o !== 'object' || typeof o.impronta !== 'string' || !o.modelli || typeof o.modelli !== 'object' || Array.isArray(o.modelli)) return null;
+  return o;
+}
+/** Modelli Gemini esclusi (quota finita) ancora validi per la chiave con questa impronta. */
+function leggiEsclusiGemini(raw, impronta, adessoMs) {
+  const o = _leggiEsclusi(raw);
+  if (!o || o.impronta !== impronta) return [];
+  return Object.keys(o.modelli).filter(k => typeof o.modelli[k] === 'number' && o.modelli[k] > adessoMs);
+}
+/** Aggiunge `modello` agli esclusi fino a `finoMs`; un'impronta diversa (chiave cambiata) riparte da zero. */
+function aggiungiEsclusoGemini(raw, impronta, modello, finoMs, adessoMs) {
+  const modelli = Object.create(null);
+  for (const k of leggiEsclusiGemini(raw, impronta, adessoMs)) modelli[k] = _leggiEsclusi(raw).modelli[k];
+  modelli[_str(modello)] = finoMs;
+  return JSON.stringify({ impronta, modelli });
 }
 
 /** Ora "da orologio" di Los Angeles per un istante (Intl gestisce l'ora legale USA). */
@@ -837,7 +869,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };

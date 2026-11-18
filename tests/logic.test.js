@@ -419,17 +419,50 @@ test('messaggioErroreGemini: messaggi chiari per i casi comuni', () => {
   assert.match(L.messaggioErroreGemini(418, ''), /418/);
 });
 
-test('scegliModelloGemini: alias latest, flash stabile più recente, esclusioni', () => {
+test('scegliModelloGemini: flash stabile più recente prima dell\'alias, esclusioni', () => {
   const m = (n, met = ['generateContent']) => ({ name: 'models/' + n, supportedGenerationMethods: met });
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-flash-latest'), m('gemini-3-flash')]), 'gemini-flash-latest');
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-flash-latest'), m('gemini-3-flash')]), 'gemini-3-flash');
   assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-3-flash'), m('gemini-2.5-pro'), m('gemini-3-flash-lite'), m('gemini-3-flash-preview')]), 'gemini-3-flash');
   assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash-image'), m('gemini-2.0-flash-exp'), m('embedding-001', ['embedContent']), m('gemini-2.5-flash-tts')]), 'gemini-2.0-flash-exp'); // ripiego: meglio di niente
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-pro'), m('gemini-2.5-flash-lite')]), 'gemini-2.5-pro');
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-pro'), m('gemini-2.5-flash-lite')]), 'gemini-2.5-flash-lite');
   assert.equal(L.scegliModelloGemini([m('gemini-3-flash', ['embedContent'])]), null);   // non supporta generateContent
   assert.equal(L.scegliModelloGemini([]), null);
   assert.equal(L.scegliModelloGemini(null), null);
-  assert.equal(L.scegliModelloGemini([m('gemini-flash-latest'), m('gemini-3.8-flash')], ['gemini-flash-latest']), 'gemini-3.8-flash');
+  assert.equal(L.scegliModelloGemini([m('gemini-flash-latest'), m('gemini-3.8-flash')], ['gemini-3.8-flash']), 'gemini-flash-latest');
   assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash')], ['gemini-2.5-flash']), null);   // elencato ma ritirato: non si ripropone
+});
+
+test('improntaChiave: stabile, 8 hex, diversa per chiavi diverse, non contiene la chiave', () => {
+  const a = L.improntaChiave('AIzaSyCHIAVE-1'), b = L.improntaChiave('AIzaSyCHIAVE-2');
+  assert.match(a, /^[0-9a-f]{8}$/); assert.equal(a, L.improntaChiave('AIzaSyCHIAVE-1')); assert.notEqual(a, b);
+});
+test('quotaModelloFinita: zero e giorno sì, minuto e sconosciuto no', () => {
+  assert.equal(L.quotaModelloFinita({ tipo: 'zero' }), true);
+  assert.equal(L.quotaModelloFinita({ tipo: 'giorno' }), true);
+  assert.equal(L.quotaModelloFinita({ tipo: 'minuto' }), false);
+  assert.equal(L.quotaModelloFinita(null), false);
+});
+test('esclusi Gemini: aggiunta, scadenza, altra chiave, JSON rovinato', () => {
+  const t = 1_000_000;
+  let raw = L.aggiungiEsclusoGemini(null, 'aaaa1111', 'gemini-flash-latest', t + 5000, t);
+  raw = L.aggiungiEsclusoGemini(raw, 'aaaa1111', 'gemini-2.5-flash', t + 100, t);
+  assert.deepEqual(L.leggiEsclusiGemini(raw, 'aaaa1111', t).sort(), ['gemini-2.5-flash', 'gemini-flash-latest']);
+  assert.deepEqual(L.leggiEsclusiGemini(raw, 'aaaa1111', t + 200), ['gemini-flash-latest']);
+  assert.deepEqual(L.leggiEsclusiGemini(raw, 'bbbb2222', t), []);
+  assert.deepEqual(L.leggiEsclusiGemini('{rotto', 'aaaa1111', t), []);
+  assert.deepEqual(L.leggiEsclusiGemini(null, 'aaaa1111', t), []);
+  const altra = L.aggiungiEsclusoGemini(raw, 'bbbb2222', 'gemini-2.5-flash', t + 5000, t);
+  assert.deepEqual(L.leggiEsclusiGemini(altra, 'bbbb2222', t), ['gemini-2.5-flash']);
+  assert.deepEqual(L.leggiEsclusiGemini(altra, 'aaaa1111', t), []);
+  assert.deepEqual(L.leggiEsclusiGemini(L.aggiungiEsclusoGemini(null, 'aaaa1111', '__proto__', t + 5000, t), 'aaaa1111', t), ['__proto__']);
+});
+test('scegliModelloGemini: flash stabile prima dell\'alias, poi lite, null se tutto escluso', () => {
+  const m = n => ({ name: 'models/' + n, supportedGenerationMethods: ['generateContent'] });
+  const el = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3-flash-preview'].map(m);
+  assert.equal(L.scegliModelloGemini(el), 'gemini-2.5-flash');
+  assert.equal(L.scegliModelloGemini(el, ['gemini-2.5-flash', 'gemini-2.0-flash']), 'gemini-flash-latest');
+  assert.equal(L.scegliModelloGemini(el, ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']), 'gemini-2.5-flash-lite');
+  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash')], ['gemini-2.5-flash']), null);
 });
 
 test('messaggioErroreGemini: il 404 riporta il dettaglio di Google (senza la chiave)', () => {
