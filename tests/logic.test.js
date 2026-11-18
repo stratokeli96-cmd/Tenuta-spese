@@ -356,6 +356,52 @@ test('normalizzaRispostaGemini: input non valido -> errori, mai eccezioni', () =
   assert.equal(L.normalizzaRispostaGemini({ righe: [{ prodotto: 'a', prezzo: 1 }], totale: 1 }, CATS).avvisi.length, 0);
 });
 
+test('costruisciRichiestaOpenRouter: immagini come data URL, json solo se supportato', () => {
+  const r = L.costruisciRichiestaOpenRouter([{ mime: 'image/jpeg', base64: 'AAA' }], CATS, 'x/y:free', true);
+  assert.equal(r.model, 'x/y:free');
+  assert.equal(r.temperature, 0);
+  assert.equal(r.messages[0].content[1].image_url.url, 'data:image/jpeg;base64,AAA');
+  assert.match(r.messages[0].content[0].text, /righe/);
+  assert.match(r.messages[0].content[0].text, /Ortofrutta, Latticini e Uova, Altro/);
+  assert.deepEqual(r.response_format, { type: 'json_object' });
+  assert.equal('response_format' in L.costruisciRichiestaOpenRouter([], CATS, 'x', false), false);
+});
+test('promptScontrino: stesso testo usato da Gemini, con la forma JSON', () => {
+  const p = L.promptScontrino(CATS);
+  assert.equal(L.costruisciRichiestaGemini([], CATS).contents[0].parts[0].text, p);
+  assert.match(p, /"righe"/);
+});
+test('testoRispostaOpenRouter: stringa, array di parti, vuoto', () => {
+  assert.equal(L.testoRispostaOpenRouter({ choices: [{ message: { content: '{"a":1}' } }] }), '{"a":1}');
+  assert.equal(L.testoRispostaOpenRouter({ choices: [{ message: { content: [{ type: 'text', text: '{"a"' }, { type: 'text', text: ':1}' }] } }] }), '{"a":1}');
+  assert.equal(L.testoRispostaOpenRouter({}), '');
+  assert.equal(L.testoRispostaOpenRouter(null), '');
+});
+test('normalizzaRispostaIA: JSON in mezzo a testo, nome servizio nei messaggi', () => {
+  const r = L.normalizzaRispostaIA('Ecco:\n```json\n{"righe":[{"prodotto":"Latte","prezzo":1.2}],"totale":1.2}\n```\nFine', CATS, 'OpenRouter');
+  assert.equal(r.righe.length, 1); assert.equal(r.errori.length, 0);
+  assert.match(L.normalizzaRispostaIA('boh', CATS, 'OpenRouter').errori[0], /OpenRouter/);
+  assert.match(L.normalizzaRispostaIA({ righe: [] }, CATS, 'OpenRouter').errori[0], /OpenRouter/);
+});
+test('scegliModelloOpenRouter: solo :free con immagini e prezzo 0, contesto maggiore, esclusioni, null', () => {
+  const m = (id, img, prezzo, ctx, params = []) => ({ id, context_length: ctx, architecture: { input_modalities: img ? ['text', 'image'] : ['text'] }, pricing: { prompt: prezzo, completion: prezzo }, supported_parameters: params });
+  const el = [m('a/testo:free', false, '0', 900000), m('b/vis', true, '0.000001', 900000), m('c/vis:free', true, '0', 128000, ['response_format']), m('d/vis:free', true, '0', 262000)];
+  assert.deepEqual(L.scegliModelloOpenRouter(el), { id: 'd/vis:free', json: false });
+  assert.deepEqual(L.scegliModelloOpenRouter(el, ['d/vis:free']), { id: 'c/vis:free', json: true });
+  assert.equal(L.scegliModelloOpenRouter([m('a/testo:free', false, '0', 1)]), null);
+  assert.equal(L.scegliModelloOpenRouter(null), null);
+  assert.equal(L.scegliModelloOpenRouter([null, 'x', {}]), null);
+});
+test('messaggioErroreOpenRouter: casi principali, mai la chiave', () => {
+  assert.match(L.messaggioErroreOpenRouter(401, ''), /chiave/);
+  assert.match(L.messaggioErroreOpenRouter(402, ''), /credito/);
+  assert.match(L.messaggioErroreOpenRouter(429, ''), /limite/);
+  assert.match(L.messaggioErroreOpenRouter(404, ''), /immagini/);
+  assert.match(L.messaggioErroreOpenRouter(400, 'No endpoints found that support image input'), /immagini/);
+  assert.match(L.messaggioErroreOpenRouter(503, ''), /non disponibile/);
+  assert.match(L.messaggioErroreOpenRouter(418, ''), /418/);
+});
+
 test('confrontaLetture: prezzi uguali + nome compatibile, ogni riga usata una sola volta', () => {
   const rif = [{ prodotto: 'Latte parzialmente scremato', prezzo: 1.49 }, { prodotto: 'Mele', prezzo: 2.5 }, { prodotto: 'Pane', prezzo: 1 }];
   const ocr = [{ prodotto: 'LATTE PARZ SCREM', prezzo: 1.49 }, { prodotto: 'MELE GOLD', prezzo: 2.5 }, { prodotto: 'XQZ', prezzo: 1.0 }, { prodotto: 'extra', prezzo: 9 }];

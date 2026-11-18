@@ -550,9 +550,9 @@ function indovinaVoce(desc, st) {
    ============================================================ */
 const CATEGORIA_FALLBACK = 'Altro';
 
-/** Corpo della richiesta a Gemini (generateContent) per leggere uno scontrino da una o più immagini. */
-function costruisciRichiestaGemini(immagini, categorie) {
-  const prompt = [
+/** Istruzioni comuni (Gemini, OpenRouter) per leggere uno scontrino. */
+function promptScontrino(categorie) {
+  return [
     'Sei un lettore esperto di scontrini fiscali italiani. Leggi l\'immagine (o le immagini: sono pagine dello STESSO scontrino) e restituisci SOLO JSON.',
     'Regole:',
     '- "totale" è il TOTALE COMPLESSIVO stampato sullo scontrino (importo pagato), non la somma delle righe.',
@@ -562,8 +562,14 @@ function costruisciRichiestaGemini(immagini, categorie) {
     '- "prodotto": nome leggibile e normalizzato in italiano (espandi le abbreviazioni ovvie, niente codici).',
     '- "categoria": scegli ESATTAMENTE una tra: ' + categorie.join(', ') + '.',
     '- "data" nel formato YYYY-MM-DD. Se un dato non è leggibile lascia stringa vuota o ometti il campo; non inventare.',
-    '- Prezzi come numeri con il punto decimale.'
+    '- Prezzi come numeri con il punto decimale.',
+    'Forma della risposta: {"negozio": "", "localita": "", "data": "", "totale": 0, "righe": [{"prodotto": "", "categoria": "", "prezzo": 0}]}'
   ].join('\n');
+}
+
+/** Corpo della richiesta a Gemini (generateContent) per leggere uno scontrino da una o più immagini. */
+function costruisciRichiestaGemini(immagini, categorie) {
+  const prompt = promptScontrino(categorie);
   const T = { OBJECT: 'OBJECT', STRING: 'STRING', NUMBER: 'NUMBER', ARRAY: 'ARRAY' };
   return {
     contents: [{ role: 'user', parts: [{ text: prompt }, ...immagini.map(i => ({ inline_data: { mime_type: i.mime, data: i.base64 } }))] }],
@@ -584,15 +590,26 @@ function costruisciRichiestaGemini(immagini, categorie) {
   };
 }
 
-/** Risposta di Gemini (oggetto o testo JSON, anche con ```fence```) -> lettura validata dello scontrino. */
-function normalizzaRispostaGemini(raw, categorie) {
+/** Risposta di Gemini -> lettura validata (vedi normalizzaRispostaIA). */
+function normalizzaRispostaGemini(raw, categorie) { return normalizzaRispostaIA(raw, categorie, 'Gemini'); }
+
+/**
+ * Risposta di un servizio IA (oggetto o testo JSON, anche con ```fence``` o testo attorno) -> lettura
+ * validata dello scontrino. `servizio` compare nei messaggi ("Gemini", "OpenRouter").
+ */
+function normalizzaRispostaIA(raw, categorie, servizio) {
   const out = { negozio: '', localita: '', data: '', righe: [], totale: 0, totaleRiportato: null, avvisi: [], errori: [] };
+  const nome = _str(servizio) || 'IA';
   let o = raw;
   if (typeof raw === 'string') {
     const t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    try { o = JSON.parse(t); } catch (_) { out.errori.push('Risposta di Gemini non leggibile (JSON non valido).'); return out; }
+    try { o = JSON.parse(t); } catch (_) {
+      const i = t.indexOf('{'), j = t.lastIndexOf('}');
+      try { o = i >= 0 && j > i ? JSON.parse(t.slice(i, j + 1)) : null; } catch (_) { o = null; }
+      if (o === null) { out.errori.push('Risposta di ' + nome + ' non leggibile (JSON non valido).'); return out; }
+    }
   }
-  if (!o || typeof o !== 'object' || Array.isArray(o)) { out.errori.push('Risposta di Gemini non valida.'); return out; }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) { out.errori.push('Risposta di ' + nome + ' non valida.'); return out; }
   out.negozio = _str(o.negozio).trim().slice(0, 80);
   out.localita = _str(o.localita).trim().slice(0, 80);
   out.data = parseDataBanca(o.data);
@@ -608,12 +625,62 @@ function normalizzaRispostaGemini(raw, categorie) {
   out.totale = round2(out.righe.reduce((a, r) => a + r.prezzo, 0));
   const tr = parseImportoBanca(o.totale);
   out.totaleRiportato = Number.isFinite(tr) && tr > 0 ? round2(tr) : null;
-  if (!out.righe.length) out.errori.push('Gemini non ha trovato prodotti nello scontrino.');
+  if (!out.righe.length) out.errori.push(nome + ' non ha trovato prodotti nello scontrino.');
   if (scartate) out.avvisi.push(scartate + ' righe scartate (importo non valido o nome mancante).');
   if (out.totaleRiportato !== null && Math.abs(out.totale - out.totaleRiportato) > 0.01) {
     out.avvisi.push('La somma delle righe (' + out.totale.toFixed(2) + ' €) non coincide col totale letto (' + out.totaleRiportato.toFixed(2) + ' €).');
   }
   return out;
+}
+
+/* ---------- OpenRouter (API compatibile OpenAI, modelli ":free") ---------- */
+
+/** Corpo per POST /api/v1/chat/completions. `conJson`: il modello accetta response_format. */
+function costruisciRichiestaOpenRouter(immagini, categorie, modello, conJson) {
+  const corpo = {
+    model: _str(modello),
+    temperature: 0,
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: promptScontrino(categorie) },
+      ...(immagini || []).map(i => ({ type: 'image_url', image_url: { url: 'data:' + i.mime + ';base64,' + i.base64 } }))
+    ] }]
+  };
+  if (conJson) corpo.response_format = { type: 'json_object' };
+  return corpo;
+}
+/** Testo della risposta di chat/completions (stringa o array di parti). */
+function testoRispostaOpenRouter(j) {
+  const c = j && Array.isArray(j.choices) && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : null;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+  return '';
+}
+/**
+ * Modello gratuito che legge immagini, da `data` di GET /api/v1/models: id ":free", immagine in ingresso,
+ * prezzo 0. Il contesto più ampio vince (di solito i modelli più grandi). -> {id, json} | null.
+ */
+function scegliModelloOpenRouter(elenco, escludi = []) {
+  const zero = v => v !== undefined && v !== null && v !== '' && Number(v) === 0;
+  const ok = (Array.isArray(elenco) ? elenco : []).filter(m => m && typeof m === 'object' && typeof m.id === 'string'
+    && /:free$/.test(m.id) && !escludi.includes(m.id)
+    && m.architecture && Array.isArray(m.architecture.input_modalities) && m.architecture.input_modalities.includes('image')
+    && m.pricing && zero(m.pricing.prompt) && zero(m.pricing.completion));
+  if (!ok.length) return null;
+  ok.sort((a, b) => (Number(b.context_length) || 0) - (Number(a.context_length) || 0) || a.id.length - b.id.length);
+  const m = ok[0];
+  return { id: m.id, json: Array.isArray(m.supported_parameters) && m.supported_parameters.includes('response_format') };
+}
+/** Messaggio comprensibile per un errore HTTP di OpenRouter (mai contiene la chiave). */
+function messaggioErroreOpenRouter(status, dettaglio) {
+  const d = String(dettaglio || '').slice(0, 160);
+  if (status === 404 || /no endpoints/i.test(d)) return 'modello OpenRouter non disponibile o senza lettura immagini';
+  if (status === 401) return 'chiave OpenRouter non valida: controllala in Impostazioni';
+  if (status === 402) return 'credito OpenRouter esaurito (usa un modello :free)';
+  if (status === 403) return 'richiesta bloccata da OpenRouter' + (d ? ' (' + d + ')' : '');
+  if (status === 429) return 'limite gratuito di OpenRouter raggiunto' + (d ? ' (' + d + ')' : '');
+  if (status === 400) return 'richiesta rifiutata da OpenRouter' + (d ? ' (' + d + ')' : '');
+  if (status >= 500) return 'OpenRouter temporaneamente non disponibile';
+  return 'errore OpenRouter ' + status;
 }
 
 /**
@@ -869,7 +936,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };
