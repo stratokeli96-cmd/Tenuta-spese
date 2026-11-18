@@ -633,6 +633,14 @@ function normalizzaRispostaIA(raw, categorie, servizio) {
   return out;
 }
 
+/** Somma delle righe contro il totale stampato: 'ok', 'diverso' (con delta) o 'mancante' (totale non letto). */
+function controlloTotale(somma, totaleRiportato) {
+  const t = Number(totaleRiportato);
+  if (totaleRiportato === null || totaleRiportato === undefined || !Number.isFinite(t) || t <= 0) return { stato: 'mancante', delta: null };
+  const delta = round2(Number(somma) - t);
+  return { stato: Math.abs(delta) > 0.01 ? 'diverso' : 'ok', delta: delta === 0 ? 0 : delta };
+}
+
 /* ---------- OpenRouter (API compatibile OpenAI, modelli ":free") ---------- */
 
 /** Corpo per POST /api/v1/chat/completions. `conJson`: il modello accetta response_format. */
@@ -936,7 +944,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, controlloTotale, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };

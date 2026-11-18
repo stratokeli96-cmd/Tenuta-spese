@@ -402,6 +402,13 @@ test('messaggioErroreOpenRouter: casi principali, mai la chiave', () => {
   assert.match(L.messaggioErroreOpenRouter(418, ''), /418/);
 });
 
+test('controlloTotale: ok, diverso con delta, mancante', () => {
+  assert.deepEqual(L.controlloTotale(10.1 + 0.2, 10.3), { stato: 'ok', delta: 0 });
+  assert.deepEqual(L.controlloTotale(12.5, 10), { stato: 'diverso', delta: 2.5 });
+  assert.deepEqual(L.controlloTotale(9, 10), { stato: 'diverso', delta: -1 });
+  for (const t of [null, 0, NaN, undefined, -3]) assert.deepEqual(L.controlloTotale(5, t), { stato: 'mancante', delta: null });
+});
+
 test('confrontaLetture: prezzi uguali + nome compatibile, ogni riga usata una sola volta', () => {
   const rif = [{ prodotto: 'Latte parzialmente scremato', prezzo: 1.49 }, { prodotto: 'Mele', prezzo: 2.5 }, { prodotto: 'Pane', prezzo: 1 }];
   const ocr = [{ prodotto: 'LATTE PARZ SCREM', prezzo: 1.49 }, { prodotto: 'MELE GOLD', prezzo: 2.5 }, { prodotto: 'XQZ', prezzo: 1.0 }, { prodotto: 'extra', prezzo: 9 }];
