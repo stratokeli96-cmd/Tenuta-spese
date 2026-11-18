@@ -5976,7 +5976,8 @@ async function renderIA() {
       : 'Nessun caso ancora: si accumulano salvando scontrini.';
   } catch (e) { info.textContent = 'Lettura casi non riuscita: ' + e.message; }
 }
-document.getElementById('btn-ia-salva').addEventListener('click', () => {
+/** Salva i campi IA così come sono (chiavi comprese): una chiave incollata non si perde mai, anche se la prova fallisce. */
+function salvaCampiIA() {
   const prima = configIA();
   const chiave = document.getElementById('ia-chiave').value.trim();
   const modello = document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT;
@@ -5984,7 +5985,7 @@ document.getElementById('btn-ia-salva').addEventListener('click', () => {
   const orChiave = document.getElementById('or-chiave').value.trim();
   const orModello = document.getElementById('or-modello').value.trim();
   if (orChiave !== prima.orChiave || orModello !== prima.orModello) togliPausaOpenRouter();
-  const ok = salvaConfigIA({
+  return salvaConfigIA({
     attivo: document.getElementById('ia-attivo').checked,
     chiave,
     modello,
@@ -5994,6 +5995,11 @@ document.getElementById('btn-ia-salva').addEventListener('click', () => {
     orModello,
     orJson: orModello && orModello === prima.orModello ? prima.orJson : false
   });
+}
+['ia-attivo', 'ia-chiave', 'ia-modello', 'ia-foto', 'or-attivo', 'or-chiave', 'or-modello'].forEach(id =>
+  document.getElementById(id).addEventListener('change', () => salvaCampiIA()));
+document.getElementById('btn-ia-salva').addEventListener('click', () => {
+  const ok = salvaCampiIA();
   toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
   renderIA();
 });
@@ -6011,6 +6017,7 @@ async function provaGemini(ia, timeoutMs = 45000) {
 const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { maxOutputTokens: 1024 } };
 
 document.getElementById('btn-ia-test').addEventListener('click', async () => {
+  salvaCampiIA();   // la chiave incollata resta salvata qualunque sia l'esito della prova
   let ia = iaDaCampi();
   const originale = ia.modello;
   if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
@@ -6064,6 +6071,7 @@ function orDaCampi() {
   return { ...c, orChiave: document.getElementById('or-chiave').value.trim(), orModello, orJson: orModello === c.orModello ? c.orJson : false };
 }
 document.getElementById('btn-or-test').addEventListener('click', async () => {
+  salvaCampiIA();   // la chiave incollata resta salvata qualunque sia l'esito della prova
   const c = orDaCampi();
   if (c.orChiave.length < 10) { mostraStatoOR('Inserisci prima la chiave API di OpenRouter.', 'var(--danger)'); return; }
   const salvata = configIA();
