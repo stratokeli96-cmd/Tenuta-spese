@@ -1877,8 +1877,8 @@ table.data tbody tr { transition: background var(--t-fast); }
 
         <div class="section-title" style="margin-top: var(--sp-lg);">Casi di prova per migliorare l'OCR</div>
         <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
-          Ogni scontrino salvato conserva il testo dell'OCR locale, la lettura di Gemini e la tua correzione finale. Servono per misurare quanto l'OCR integrato è affidabile e per migliorarlo:
-          esporta il file e passalo a Claude per aggiornare il parser. Quando l'accuratezza è alta puoi spegnere Gemini.
+          Ogni scontrino salvato conserva il testo dell'OCR locale, la lettura dell'IA (Gemini o OpenRouter) e la tua correzione finale. Servono per misurare quanto l'OCR integrato è affidabile e per migliorarlo:
+          esporta il file e passalo a Claude per aggiornare il parser. Quando l'accuratezza è alta puoi spegnere l'IA.
         </p>
         <p id="ia-casi-info" style="font-size:13px; margin-bottom:8px;"></p>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -2117,7 +2117,7 @@ table.data tbody tr { transition: background var(--t-fast); }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.17e';
+const APP_VERSION = '2026.11.18a';
 const APP_BUILD_NOTE = 'Gemini: una sola richiesta per scontrino, pausa automatica quando la quota gratuita finisce (con il limite superato), niente più raffiche di modelli di riserva';
 
 /* ============================================================
@@ -3848,14 +3848,43 @@ async function ocrLocale(pagine) {
 
 /* Lettura in corso: tiene insieme OCR locale, Gemini e (al salvataggio) la correzione finale. */
 let ultimaLettura = null;
-const ATTESA_GEMINI_DOPO_OCR_MS = 6000;   // quanto si aspetta Gemini dopo che l'OCR locale ha finito
+const ATTESA_IA_DOPO_OCR_MS = 6000;   // quanto si aspetta la catena IA dopo che l'OCR locale ha finito
+const NOMI_IA = { gemini: 'Gemini', openrouter: 'OpenRouter' };
 
 function aggiornaConfrontoIA() {
   const L0 = ultimaLettura;
   const box = document.getElementById('ocr-confronto');
-  if (!box || !L0 || !L0.ocr || !L0.gemini) return;
-  const c = confrontaLetture(L0.ocr.righe, L0.gemini.righe);
-  box.innerHTML = `<div class="alert info" style="margin-bottom:10px;">Confronto: l'OCR locale ha letto <strong>${c.righeUguali} righe su ${Math.max(c.righeLette, c.righeRif)}</strong> uguali a Gemini (${Math.round(c.accuratezza * 100)}%). Il confronto finale, dopo la tua correzione, migliora le statistiche in Impostazioni.</div>`;
+  if (!box || !L0 || !L0.ocr || !L0.ia) return;
+  const c = confrontaLetture(L0.ocr.righe, L0.ia.righe);
+  box.innerHTML = `<div class="alert info" style="margin-bottom:10px;">Confronto: l'OCR locale ha letto <strong>${c.righeUguali} righe su ${Math.max(c.righeLette, c.righeRif)}</strong> uguali a ${escapeHtml(NOMI_IA[L0.iaFonte] || 'IA')} (${Math.round(c.accuratezza * 100)}%). Il confronto finale, dopo la tua correzione, migliora le statistiche in Impostazioni.</div>`;
+}
+
+/**
+ * Servizi IA uno alla volta, mai in parallelo: Gemini → OpenRouter. Si passa al successivo se il
+ * precedente è in pausa, fallisce o non trova prodotti. Se `finestraChiusa()` (l'OCR ha già dato il
+ * risultato) non si avvia il servizio successivo: sarebbe quota spesa per nulla.
+ * -> {lettura, foto, modello, fonte: 'gemini'|'openrouter', motivi: string[]}; rifiuta con err.motivi.
+ */
+async function catenaIA(pagine, finestraChiusa, onStato) {
+  const motivi = [];
+  const servizi = [];
+  if (geminiPronto()) servizi.push({ fonte: 'gemini', pausa: pausaGemini, esegui: analizzaConGemini });
+  if (openRouterPronto()) servizi.push({ fonte: 'openrouter', pausa: pausaOpenRouter, esegui: analizzaConOpenRouter });
+  for (const sv of servizi) {
+    const nome = NOMI_IA[sv.fonte];
+    const p = sv.pausa();
+    if (p) { motivi.push(nome + ' in pausa fino alle ' + oraBreve(p.fino) + ' (' + p.motivo + ')'); continue; }
+    if (finestraChiusa()) break;
+    onStato('Analisi con ' + nome + '…');
+    try {
+      const r = await sv.esegui(pagine);
+      if (r.lettura.errori.length) { motivi.push(r.lettura.errori[0]); continue; }
+      return { ...r, fonte: sv.fonte, motivi };
+    } catch (e) { motivi.push(nome + ' non disponibile (' + e.message + ')'); }
+  }
+  const err = new Error(motivi.join('; ') || 'nessun servizio IA attivo');
+  err.motivi = motivi;
+  throw err;
 }
 
 async function gestisciFileOCR(file) {
@@ -3871,14 +3900,13 @@ async function gestisciFileOCR(file) {
     if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type)) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
     }
-    const pausa = geminiPronto() ? pausaGemini() : null;   // dopo un 429 non si chiede nulla a Gemini
-    const usaGemini = geminiPronto() && !pausa;
+    // Dopo un 429 non si chiede nulla al servizio in pausa; la pausa di uno non blocca l'altro.
+    const usaIA = (geminiPronto() && !pausaGemini()) || (openRouterPronto() && !pausaOpenRouter());
     const haOcr = typeof Tesseract !== 'undefined';
-    if (!haOcr && pausa) {
-      throw new Error('Gemini in pausa fino alle ' + oraBreve(pausa.fino) + ' e OCR locale non caricato: inserisci i prodotti a mano.');
-    }
-    if (!haOcr && !usaGemini) {
-      throw new Error('Libreria OCR non caricata (offline?). Inserisci i prodotti manualmente.');
+    if (!haOcr && !usaIA) {
+      throw new Error((geminiPronto() || openRouterPronto()
+        ? 'Servizi IA in pausa e OCR locale non caricato'
+        : 'Libreria OCR non caricata (offline?)') + ': inserisci i prodotti a mano.');
     }
 
     // Lo scanner documenti nativo di iOS consegna un PDF con UNA PAGINA PER SCATTO:
@@ -3891,37 +3919,56 @@ async function gestisciFileOCR(file) {
       pagine = [await fileToDataUrl(file)];
     }
 
-    const lettura = ultimaLettura = { ocr: null, ocrText: '', gemini: null, foto: null, ocrErrore: '', geminiErrore: '' };
+    const lettura = ultimaLettura = { ocr: null, ocrText: '', ia: null, iaFonte: null, iaModello: '', gemini: null, foto: null, ocrErrore: '', iaErrore: '' };
     const attiva = () => ultimaLettura === lettura;   // una nuova scansione invalida le vecchie
+    let finestraChiusa = false;
 
     const pOcr = haOcr
       ? ocrLocale(pagine).then(r => { lettura.ocr = r.parsed; lettura.ocrText = r.testo; if (attiva()) { ocrText = r.testo; aggiornaConfrontoIA(); } return r; })
       : Promise.reject(new Error('Libreria OCR non caricata'));
-    const pGem = usaGemini
-      ? (ocrStatus.textContent = 'Analisi con Gemini…', analizzaConGemini(pagine).then(r => { lettura.gemini = r.lettura; lettura.foto = r.foto; return r; }))
+    const pIA = usaIA
+      ? catenaIA(pagine, () => finestraChiusa, t => { if (attiva()) ocrStatus.textContent = t; }).then(r => {
+          lettura.ia = r.lettura; lettura.iaFonte = r.fonte; lettura.iaModello = r.modello || ''; lettura.foto = r.foto;
+          if (r.fonte === 'gemini') lettura.gemini = r.lettura;
+          if (attiva()) aggiornaConfrontoIA();
+          return r;
+        })
       : Promise.reject(new Error('off'));
     pOcr.catch(e => { lettura.ocrErrore = e.message; });
-    pGem.catch(e => { lettura.geminiErrore = e.message; });
+    pIA.catch(e => { lettura.iaErrore = e.message; });
 
-    let parsed = null, fonte = 'ocr', avvisoIA = '';
-    if (pausa) avvisoIA = 'Gemini in pausa fino alle ' + oraBreve(pausa.fino) + ' (' + pausa.motivo + '): uso l\'OCR locale.';
-    if (usaGemini) {
-      // Gemini è un di più: se l'OCR locale ha finito e Gemini non ha ancora risposto, gli si danno
-      // pochi secondi e poi si prosegue (mai minuti di attesa). Se l'OCR non è disponibile o fallisce
-      // non c'è alternativa e si aspetta Gemini fino in fondo, come prima.
-      const rispostaGemini = pGem.then(r => r.lettura, e => { avvisoIA = 'Gemini non disponibile (' + e.message + '): uso l\'OCR locale.'; return null; });
+    let parsed = null, fonte = 'ocr', avvisoIA = '', notaIA = '';
+    if (!usaIA && (geminiPronto() || openRouterPronto())) {
+      const pause = [['Gemini', geminiPronto() && pausaGemini()], ['OpenRouter', openRouterPronto() && pausaOpenRouter()]].filter(x => x[1]);
+      avvisoIA = pause.map(([n, p]) => n + ' in pausa fino alle ' + oraBreve(p.fino) + ' (' + p.motivo + ')').join('; ') + ': uso l\'OCR locale.';
+    }
+    if (usaIA) {
+      // L'IA è un di più: se l'OCR locale ha finito e la catena non ha ancora risposto, le si danno
+      // pochi secondi e poi si prosegue (mai minuti di attesa); il servizio successivo non parte più.
+      // Se l'OCR non è disponibile o fallisce non c'è alternativa e si aspetta la catena fino in fondo.
+      const rispostaIA = pIA.then(r => r, e => { avvisoIA = e.message + ': uso l\'OCR locale.'; return null; });
       const tolleranza = pOcr.then(() => new Promise(res => setTimeout(() => {
-        avvisoIA = 'Gemini non ha risposto in tempo: uso l\'OCR locale per non farti aspettare.';
+        finestraChiusa = true;
+        avvisoIA = 'L\'IA non ha risposto in tempo: uso l\'OCR locale per non farti aspettare.';
         res(null);
-      }, ATTESA_GEMINI_DOPO_OCR_MS)), () => new Promise(() => {}));
-      const g = await Promise.race([rispostaGemini, tolleranza]);
-      if (g && !g.errori.length) {
-        parsed = { data: g.data, negozio: g.negozio, righe: g.righe, errori: [], avvisi: g.avvisi, totale: g.totale, totaleRiportato: g.totaleRiportato, righeDaVerificare: 0 };
-        fonte = 'gemini';
-      } else if (g) avvisoIA = 'Gemini non ha trovato prodotti: uso l\'OCR locale.';
+      }, ATTESA_IA_DOPO_OCR_MS)), () => new Promise(() => {}));
+      const g = await Promise.race([rispostaIA, tolleranza]);
+      finestraChiusa = true;
+      if (g) {
+        const l = g.lettura;
+        parsed = { data: l.data, negozio: l.negozio, righe: l.righe, errori: [], avvisi: l.avvisi, totale: l.totale, totaleRiportato: l.totaleRiportato, righeDaVerificare: 0 };
+        fonte = g.fonte;
+        notaIA = 'Scontrino letto da ' + NOMI_IA[g.fonte] + (g.modello ? ' (' + g.modello + ')' : '') + '. '
+          + (g.motivi.length ? 'Prima: ' + g.motivi.join('; ') + '. ' : '')
+          + (haOcr ? 'L\'OCR locale gira in parallelo per il confronto.' : '');
+      }
     }
     if (!parsed) {
-      const r = await pOcr;      // se fallisce va al catch esterno con il motivo
+      let r;
+      try { r = await pOcr; }
+      catch (e) {   // va al catch esterno col motivo, senza perdere quello dei servizi IA
+        throw new Error((avvisoIA ? avvisoIA.replace(/: uso l'OCR locale(?: per non farti aspettare)?\.$/, '') + '. ' : '') + e.message);
+      }
       parsed = r.parsed; fonte = 'ocr';
       if (attiva()) ocrText = r.testo;
     }
@@ -3931,19 +3978,22 @@ async function gestisciFileOCR(file) {
     ocrStatus.textContent = 'Estrazione campi…';
 
     popolaPreviewDaParser(parsed);
-    if (fonte === 'gemini') {
-      const box = document.getElementById('ocr-alerts');
+    const alertBox = document.getElementById('ocr-alerts');
+    const avvisoInCima = (classe, testo) => {
       const d = document.createElement('div');
-      d.className = 'alert info'; d.style.marginBottom = '10px';
-      d.textContent = 'Scontrino letto da Gemini. L\'OCR locale gira in parallelo per il confronto.';
-      box.prepend(d);
-      aggiornaConfrontoIA();
-    } else if (avvisoIA) {
-      const box = document.getElementById('ocr-alerts');
-      const d = document.createElement('div');
-      d.className = 'alert warning'; d.style.marginBottom = '10px';
-      d.textContent = avvisoIA;
-      box.prepend(d);
+      d.className = 'alert ' + classe; d.style.marginBottom = '10px';
+      d.textContent = testo;
+      alertBox.prepend(d);
+    };
+    if (fonte !== 'ocr') { avvisoInCima('info', notaIA); aggiornaConfrontoIA(); }
+    else if (avvisoIA) avvisoInCima('warning', avvisoIA);
+    // Controllo del totale sempre in cima: è l'ultima difesa contro prezzi letti male.
+    const ct = controlloTotale(parsed.totale, parsed.totaleRiportato);
+    if (parsed.righe.length && ct.stato === 'diverso') {
+      avvisoInCima('danger', 'Il totale non torna: somma delle righe ' + fmt(parsed.totale) + ', totale sullo scontrino '
+        + fmt(parsed.totaleRiportato) + ' (differenza ' + (ct.delta > 0 ? '+' : '') + fmt(ct.delta) + '). Controlla le righe prima di salvare.');
+    } else if (parsed.righe.length && ct.stato === 'mancante') {
+      avvisoInCima('warning', 'Totale dello scontrino non letto: controlla le righe (somma ' + fmt(parsed.totale) + ').');
     }
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);
@@ -3954,7 +4004,7 @@ async function gestisciFileOCR(file) {
     } else {
       const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
       const daVerificare = parsed.righeDaVerificare || 0;
-      let msg = `${fonte === 'gemini' ? 'Gemini' : 'OCR'} completato: ${parsed.righe.length} voci estratte`;
+      let msg = `${NOMI_IA[fonte] || 'OCR'} completato: ${parsed.righe.length} voci estratte`;
       if (conSconto) msg += `, ${conSconto} con sconto`;
       if (daVerificare) msg += `, ${daVerificare} da verificare`;
       toast(msg, daVerificare || parsed.avvisi.length ? 'warning' : 'success');
@@ -5058,10 +5108,21 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
         return;
       }
     }
+  } else if (ocrText || (ultimaLettura && ultimaLettura.ia)) {
+    // Scontrino letto (non inserito a mano) ma senza totale stampato: niente con cui confrontare.
+    const ok = confirm(
+      'Il totale dello scontrino non è stato letto.\n\n' +
+      'La somma dei prodotti è ' + totale.toFixed(2) + ' \u20ac. È giusta?\n\n' +
+      'Premi OK per registrare, Annulla per correggere le voci.'
+    );
+    if (!ok) {
+      toast('Salvataggio annullato: correggi le voci e riprova.', 'warning', 6000);
+      return;
+    }
   }
 
   const scontrinoId = uid();
-  const origine = (ocrText || (ultimaLettura && ultimaLettura.gemini)) ? 'ocr' : 'manuale';
+  const origine = (ocrText || (ultimaLettura && ultimaLettura.ia)) ? 'ocr' : 'manuale';
   salvaCasoScontrino(righe, totale, negozio, data);
 
   stato.scontrini.push({ id: scontrinoId, data, negozio, localita, totale, origine });
@@ -5089,10 +5150,10 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   ocrPreview.classList.remove('active');
 });
 
-/** Salva il caso di prova (OCR locale vs Gemini vs correzione finale). Non blocca mai il salvataggio. */
+/** Salva il caso di prova (OCR locale vs IA (Gemini/OpenRouter) vs correzione finale). Non blocca mai il salvataggio. */
 function salvaCasoScontrino(righe, totale, negozio, data) {
   const L0 = ultimaLettura;
-  if (!L0 || (!L0.ocr && !L0.gemini) || !Archivio.ok) return;
+  if (!L0 || (!L0.ocr && !L0.ia) || !Archivio.ok) return;
   const pulite = rs => rs.map(r => ({ prodotto: r.prodotto, categoria: r.categoria, prezzo: r.prezzo }));
   const caso = {
     id: uid(), creato: new Date().toISOString(), negozio, data,
@@ -5101,6 +5162,8 @@ function salvaCasoScontrino(righe, totale, negozio, data) {
     ocrTotaleRiportato: L0.ocr ? L0.ocr.totaleRiportato : null,
     geminiRighe: L0.gemini ? pulite(L0.gemini.righe) : null, geminiTotale: L0.gemini ? L0.gemini.totale : null,
     usoGemini: !!L0.gemini,
+    iaFonte: L0.iaFonte || null, iaModello: L0.iaModello || '',
+    iaRighe: L0.ia ? pulite(L0.ia.righe) : null, iaTotale: L0.ia ? L0.ia.totale : null,
     finaleRighe: pulite(righe), totaleFinale: totale,
     foto: configIA().salvaFoto ? L0.foto : null
   };
