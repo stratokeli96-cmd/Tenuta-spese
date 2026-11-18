@@ -633,6 +633,12 @@ function normalizzaRispostaIA(raw, categorie, servizio) {
   return out;
 }
 
+/** Quanto dovrebbe costare lo scontrino secondo le righe lette (somma prezzi − sconto complessivo, mai < 0). */
+function sommaAttesaLettura(l) {
+  const righe = l && Array.isArray(l.righe) ? l.righe : [];
+  const somma = righe.reduce((a, r) => a + (Number(r && r.prezzo) || 0), 0);
+  return round2(Math.max(0, somma - (Number(l && l.scontoComplessivo) || 0)));
+}
 /** Somma delle righe contro il totale stampato: 'ok', 'diverso' (con delta) o 'mancante' (totale non letto). */
 function controlloTotale(somma, totaleRiportato) {
   const t = Number(totaleRiportato);
@@ -944,7 +950,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, controlloTotale, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, controlloTotale, sommaAttesaLettura, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };

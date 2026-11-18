@@ -3696,7 +3696,15 @@ async function elencaModelliGemini(chiave, timeoutMs = 20000) {
  * Non salva il modello: lo fa chi chiama. -> {risultato, modello, cambiato, motivo: 'ritirato'|'quota'|''}
  */
 async function conSostitutoGemini(ia, esegui) {
-  try { return { risultato: await esegui(ia), modello: ia.modello, cambiato: false, motivo: '' }; }
+  try {
+    // Modello già senza quota oggi (es. sostituzione fallita per rete): nessuna richiesta sicuramente sprecata.
+    if (esclusiGemini(ia.chiave).includes(ia.modello)) {
+      const err = new Error('il modello "' + ia.modello + '" oggi non ha quota gratuita');
+      err.quotaModello = true;
+      throw err;
+    }
+    return { risultato: await esegui(ia), modello: ia.modello, cambiato: false, motivo: '' };
+  }
   catch (e) {
     if (e.status !== 404 && !e.quotaModello) throw e;
     if (e.quotaModello) escludiModelloGemini(ia.chiave, ia.modello);
@@ -3988,12 +3996,14 @@ async function gestisciFileOCR(file) {
     if (fonte !== 'ocr') { avvisoInCima('info', notaIA); aggiornaConfrontoIA(); }
     else if (avvisoIA) avvisoInCima('warning', avvisoIA);
     // Controllo del totale sempre in cima: è l'ultima difesa contro prezzi letti male.
-    const ct = controlloTotale(parsed.totale, parsed.totaleRiportato);
+    // Per l'OCR parsed.totale è il totale stampato: si confronta la somma delle righe (meno sconti).
+    const sommaAttesa = sommaAttesaLettura(parsed);
+    const ct = controlloTotale(sommaAttesa, parsed.totaleRiportato);
     if (parsed.righe.length && ct.stato === 'diverso') {
-      avvisoInCima('danger', 'Il totale non torna: somma delle righe ' + fmt(parsed.totale) + ', totale sullo scontrino '
+      avvisoInCima('danger', 'Il totale non torna: somma delle righe ' + fmt(sommaAttesa) + ', totale sullo scontrino '
         + fmt(parsed.totaleRiportato) + ' (differenza ' + (ct.delta > 0 ? '+' : '') + fmt(ct.delta) + '). Controlla le righe prima di salvare.');
     } else if (parsed.righe.length && ct.stato === 'mancante') {
-      avvisoInCima('warning', 'Totale dello scontrino non letto: controlla le righe (somma ' + fmt(parsed.totale) + ').');
+      avvisoInCima('warning', 'Totale dello scontrino non letto: controlla le righe (somma ' + fmt(sommaAttesa) + ').');
     }
     ocrPreview.classList.add('active');
     setTimeout(() => { ocrProgress.classList.remove('active'); ocrStatus.textContent = ''; }, 600);

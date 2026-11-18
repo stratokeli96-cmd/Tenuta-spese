@@ -409,6 +409,16 @@ test('controlloTotale: ok, diverso con delta, mancante', () => {
   for (const t of [null, 0, NaN, undefined, -3]) assert.deepEqual(L.controlloTotale(5, t), { stato: 'mancante', delta: null });
 });
 
+test('sommaAttesaLettura: righe meno sconti; con controlloTotale scopre i prezzi assurdi dell\'OCR', () => {
+  // parseScontrino mette totale = totaleRiportato: il confronto va fatto sulla somma delle righe.
+  const ocr = { righe: [{ prezzo: 1.5 }, { prezzo: 60.4 }], scontoComplessivo: 0.5, totale: 23.4, totaleRiportato: 23.4 };
+  assert.equal(L.sommaAttesaLettura(ocr), 61.4);
+  assert.equal(L.controlloTotale(L.sommaAttesaLettura(ocr), ocr.totaleRiportato).stato, 'diverso');
+  assert.equal(L.sommaAttesaLettura({ righe: [{ prezzo: 0.1 }, { prezzo: 0.2 }] }), 0.3);
+  assert.equal(L.sommaAttesaLettura({ righe: [{ prezzo: 1 }], scontoComplessivo: 5 }), 0);
+  assert.equal(L.sommaAttesaLettura(null), 0);
+});
+
 test('confrontaLetture: prezzi uguali + nome compatibile, ogni riga usata una sola volta', () => {
   const rif = [{ prodotto: 'Latte parzialmente scremato', prezzo: 1.49 }, { prodotto: 'Mele', prezzo: 2.5 }, { prodotto: 'Pane', prezzo: 1 }];
   const ocr = [{ prodotto: 'LATTE PARZ SCREM', prezzo: 1.49 }, { prodotto: 'MELE GOLD', prezzo: 2.5 }, { prodotto: 'XQZ', prezzo: 1.0 }, { prodotto: 'extra', prezzo: 9 }];
