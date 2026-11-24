@@ -546,7 +546,7 @@ function indovinaVoce(desc, st) {
 }
 
 /* ============================================================
-   SCONTRINI: lettura con Gemini, confronto con l'OCR locale, analisi prodotti
+   SCONTRINI: lettura con Groq, OCR locale, analisi prodotti
    ============================================================ */
 const CATEGORIA_FALLBACK = 'Altro';
 
@@ -567,35 +567,9 @@ function promptScontrino(categorie) {
   ].join('\n');
 }
 
-/** Corpo della richiesta a Gemini (generateContent) per leggere uno scontrino da una o più immagini. */
-function costruisciRichiestaGemini(immagini, categorie) {
-  const prompt = promptScontrino(categorie);
-  const T = { OBJECT: 'OBJECT', STRING: 'STRING', NUMBER: 'NUMBER', ARRAY: 'ARRAY' };
-  return {
-    contents: [{ role: 'user', parts: [{ text: prompt }, ...immagini.map(i => ({ inline_data: { mime_type: i.mime, data: i.base64 } }))] }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: T.OBJECT,
-        properties: {
-          negozio: { type: T.STRING }, localita: { type: T.STRING }, data: { type: T.STRING }, totale: { type: T.NUMBER },
-          righe: { type: T.ARRAY, items: { type: T.OBJECT, properties: {
-            prodotto: { type: T.STRING }, categoria: { type: T.STRING, enum: categorie }, prezzo: { type: T.NUMBER }
-          }, required: ['prodotto', 'prezzo'] } }
-        },
-        required: ['righe']
-      }
-    }
-  };
-}
-
-/** Risposta di Gemini -> lettura validata (vedi normalizzaRispostaIA). */
-function normalizzaRispostaGemini(raw, categorie) { return normalizzaRispostaIA(raw, categorie, 'Gemini'); }
-
 /**
  * Risposta di un servizio IA (oggetto o testo JSON, anche con ```fence``` o testo attorno) -> lettura
- * validata dello scontrino. `servizio` compare nei messaggi ("Gemini", "OpenRouter").
+ * validata dello scontrino. `servizio` compare nei messaggi (es. "Groq").
  */
 function normalizzaRispostaIA(raw, categorie, servizio) {
   const out = { negozio: '', localita: '', data: '', righe: [], totale: 0, totaleRiportato: null, avvisi: [], errori: [] };
@@ -734,206 +708,6 @@ function configDaVecchiaIA(rawVecchio) {
   return { ...leggiConfigGroq(null), salvaFoto: o.salvaFoto === true };
 }
 
-/* ---------- OpenRouter (API compatibile OpenAI, modelli ":free") ---------- */
-
-/** Corpo per POST /api/v1/chat/completions. `conJson`: il modello accetta response_format. */
-function costruisciRichiestaOpenRouter(immagini, categorie, modello, conJson) {
-  const corpo = {
-    model: _str(modello),
-    temperature: 0,
-    messages: [{ role: 'user', content: [
-      { type: 'text', text: promptScontrino(categorie) },
-      ...(immagini || []).map(i => ({ type: 'image_url', image_url: { url: 'data:' + i.mime + ';base64,' + i.base64 } }))
-    ] }]
-  };
-  if (conJson) corpo.response_format = { type: 'json_object' };
-  return corpo;
-}
-/** Testo della risposta di chat/completions (stringa o array di parti). */
-function testoRispostaOpenRouter(j) {
-  const c = j && Array.isArray(j.choices) && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : null;
-  if (typeof c === 'string') return c;
-  if (Array.isArray(c)) return c.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
-  return '';
-}
-/**
- * Modello gratuito che legge immagini, da `data` di GET /api/v1/models: id ":free", immagine in ingresso,
- * prezzo 0. Il contesto più ampio vince (di solito i modelli più grandi). -> {id, json} | null.
- */
-function scegliModelloOpenRouter(elenco, escludi = []) {
-  const zero = v => v !== undefined && v !== null && v !== '' && Number(v) === 0;
-  const ok = (Array.isArray(elenco) ? elenco : []).filter(m => m && typeof m === 'object' && typeof m.id === 'string'
-    && /:free$/.test(m.id) && !escludi.includes(m.id)
-    && m.architecture && Array.isArray(m.architecture.input_modalities) && m.architecture.input_modalities.includes('image')
-    && m.pricing && zero(m.pricing.prompt) && zero(m.pricing.completion));
-  if (!ok.length) return null;
-  ok.sort((a, b) => (Number(b.context_length) || 0) - (Number(a.context_length) || 0) || a.id.length - b.id.length);
-  const m = ok[0];
-  return { id: m.id, json: Array.isArray(m.supported_parameters) && m.supported_parameters.includes('response_format') };
-}
-/** Messaggio comprensibile per un errore HTTP di OpenRouter (mai contiene la chiave). */
-function messaggioErroreOpenRouter(status, dettaglio) {
-  const d = String(dettaglio || '').slice(0, 160);
-  if (status === 404 || /no endpoints/i.test(d)) return 'modello OpenRouter non disponibile o senza lettura immagini';
-  if (status === 401) return 'chiave OpenRouter non valida: controllala in Impostazioni';
-  if (status === 402) return 'credito OpenRouter esaurito (usa un modello :free)';
-  if (status === 403) return 'richiesta bloccata da OpenRouter' + (d ? ' (' + d + ')' : '');
-  if (status === 429) return 'limite gratuito di OpenRouter raggiunto' + (d ? ' (' + d + ')' : '');
-  if (status === 400) return 'richiesta rifiutata da OpenRouter' + (d ? ' (' + d + ')' : '');
-  if (status >= 500) return 'OpenRouter temporaneamente non disponibile';
-  return 'errore OpenRouter ' + status;
-}
-
-/**
- * Sceglie il modello Gemini migliore tra quelli che la chiave può usare.
- * `elenco`: risposta di models.list ([{name:'models/...', supportedGenerationMethods:[...]}]).
- * Preferenze: flash stabile più recente > alias "flash-latest" > flash-lite stabile > altro flash > altro gemini. Mai preview/image/tts/live.
- * `escludi`: nomi da non proporre (es. il modello appena ritirato, che Google può ancora elencare).
- */
-function scegliModelloGemini(elenco, escludi = []) {
-  const tutti = (Array.isArray(elenco) ? elenco : []).map(m => ({
-    nome: String((m && m.name) || '').replace(/^models\//, ''),
-    metodi: (m && (m.supportedGenerationMethods || m.metodi)) || []
-  })).filter(m => /^gemini-/.test(m.nome) && m.metodi.includes('generateContent') && !escludi.includes(m.nome)
-    && !/(image|tts|live|embedding|audio|robotics|computer|learnlm|vision)/.test(m.nome));
-  if (!tutti.length) return null;
-  const versione = n => { const v = n.match(/gemini-(\d+(?:\.\d+)?)/); return v ? parseFloat(v[1]) : 0; };
-  const migliore = lista => lista.sort((a, b) => versione(b.nome) - versione(a.nome) || a.nome.length - b.nome.length)[0];
-  // L'alias "-latest" segue l'ultimo modello uscito, che spesso non ha quota gratuita: meglio un flash stabile.
-  const stabili = tutti.filter(m => /^gemini-\d+(\.\d+)?-flash$/.test(m.nome));
-  if (stabili.length) return migliore(stabili).nome;
-  const alias = tutti.find(m => m.nome === 'gemini-flash-latest');
-  if (alias) return alias.nome;
-  const lite = tutti.filter(m => /^gemini-\d+(\.\d+)?-flash-lite$/.test(m.nome));
-  if (lite.length) return migliore(lite).nome;
-  const flash = tutti.filter(m => /flash/.test(m.nome) && !/(lite|preview|exp|thinking)/.test(m.nome));
-  if (flash.length) return migliore(flash).nome;
-  const altri = tutti.filter(m => !/(lite|preview|exp|thinking)/.test(m.nome));
-  return (altri.length ? migliore(altri) : migliore(tutti)).nome;
-}
-
-/**
- * Quale limite gratuito ha fatto scattare un 429 di Gemini. `corpo`: JSON di errore di Google
- * ({error:{message, details}}), oppure il solo testo; qualsiasi altra cosa → "sconosciuto".
- */
-function leggiLimiteGemini(corpo) {
-  const out = { tipo: 'sconosciuto', limite: null, modello: '', attesaMs: null };
-  const err = corpo && typeof corpo === 'object' ? corpo.error : null;
-  const msg = typeof corpo === 'string' ? corpo : (err && typeof err.message === 'string' ? err.message : '');
-  const det = err && Array.isArray(err.details) ? err.details : [];
-  const tipoDi = d => d && typeof d['@type'] === 'string' ? d['@type'] : '';
-  const viol = det.filter(d => /QuotaFailure$/.test(tipoDi(d))).flatMap(d => Array.isArray(d.violations) ? d.violations : []).filter(v => v && typeof v === 'object');
-  const ids = viol.map(v => _str(v.quotaId)).join(' ');
-  if (viol.some(v => _str(v.quotaValue) === '0') || /limit:\s*0(?!\d)/i.test(msg)) out.tipo = 'zero';
-  else if (/PerDay/.test(ids) || /per\s*day/i.test(msg)) out.tipo = 'giorno';
-  else if (/PerMinute/.test(ids) || /per\s*minute/i.test(msg)) out.tipo = 'minuto';
-  const pesa = v => _str(v.quotaValue) === '0' ? 3 : /PerDay/.test(_str(v.quotaId)) ? 2 : /PerMinute/.test(_str(v.quotaId)) ? 1 : 0;
-  const v = viol.slice().sort((a, b) => pesa(b) - pesa(a))[0];
-  const lim = v && _str(v.quotaValue) !== '' ? Number(v.quotaValue) : (msg.match(/limit:\s*(\d+)/i) || [])[1];
-  if (lim !== undefined && Number.isFinite(Number(lim))) out.limite = Number(lim);
-  out.modello = (v && v.quotaDimensions && _str(v.quotaDimensions.model)) || ((msg.match(/model:\s*([\w.-]+)/i) || [])[1] || '').replace(/\.+$/, '');
-  const retry = det.find(d => /RetryInfo$/.test(tipoDi(d)));
-  const sec = retry && /^([\d.]+)s$/.test(_str(retry.retryDelay)) ? parseFloat(retry.retryDelay) : parseFloat((msg.match(/retry in ([\d.]+)\s*s/i) || [])[1]);
-  if (Number.isFinite(sec)) out.attesaMs = Math.round(sec * 1000);
-  return out;
-}
-
-/** Impronta (FNV-1a 32 bit, 8 hex) di una chiave API: lega dati locali alla chiave senza salvarla. */
-function improntaChiave(chiave) {
-  let h = 0x811c9dc5;
-  const s = _str(chiave);
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-  return h.toString(16).padStart(8, '0');
-}
-/** Un 429 che dice "questo modello oggi non si può più usare" (quota 0 o giornaliera, che sono per modello). */
-function quotaModelloFinita(info) { return !!info && (info.tipo === 'zero' || info.tipo === 'giorno'); }
-function _leggiEsclusi(raw) {
-  let o;
-  try { o = JSON.parse(raw); } catch (_) { return null; }
-  if (!o || typeof o !== 'object' || typeof o.impronta !== 'string' || !o.modelli || typeof o.modelli !== 'object' || Array.isArray(o.modelli)) return null;
-  return o;
-}
-/** Modelli Gemini esclusi (quota finita) ancora validi per la chiave con questa impronta. */
-function leggiEsclusiGemini(raw, impronta, adessoMs) {
-  const o = _leggiEsclusi(raw);
-  if (!o || o.impronta !== impronta) return [];
-  return Object.keys(o.modelli).filter(k => typeof o.modelli[k] === 'number' && o.modelli[k] > adessoMs);
-}
-/** Aggiunge `modello` agli esclusi fino a `finoMs`; un'impronta diversa (chiave cambiata) riparte da zero. */
-function aggiungiEsclusoGemini(raw, impronta, modello, finoMs, adessoMs) {
-  const modelli = Object.create(null);
-  for (const k of leggiEsclusiGemini(raw, impronta, adessoMs)) modelli[k] = _leggiEsclusi(raw).modelli[k];
-  modelli[_str(modello)] = finoMs;
-  return JSON.stringify({ impronta, modelli });
-}
-
-/** Ora "da orologio" di Los Angeles per un istante (Intl gestisce l'ora legale USA). */
-function _oraLosAngeles(ms) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23',
-    hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(ms).map(x => [x.type, x.value]));
-  return { h: +p.hour, m: +p.minute, s: +p.second };
-}
-/** Prossima mezzanotte di Los Angeles dopo `adessoMs`: è quando Google azzera le quote giornaliere. */
-function prossimaMezzanotteLosAngeles(adessoMs) {
-  const o = _oraLosAngeles(adessoMs);
-  const daMezzanotte = ((o.h * 60 + o.m) * 60 + o.s) * 1000 + (((adessoMs % 1000) + 1000) % 1000);
-  let t = adessoMs - daMezzanotte + 24 * 3600000;
-  const h = _oraLosAngeles(t).h;   // se in mezzo c'è il cambio d'ora si cade sulle 23 o sull'1
-  if (h === 23) t += 3600000; else if (h === 1) t -= 3600000;
-  return t;
-}
-/** Fino a quando non chiedere più nulla a Gemini dopo un 429 (`info` da leggiLimiteGemini). */
-function finePausaGemini(info, adessoMs) {
-  const tipo = info && info.tipo;
-  if (tipo === 'giorno' || tipo === 'zero') return prossimaMezzanotteLosAngeles(adessoMs);
-  const attesa = info && Number.isFinite(info.attesaMs) ? info.attesaMs : 60000;
-  return adessoMs + attesa;
-}
-/** Pausa salvata (testo JSON di localStorage) ancora valida, oppure null se manca, è scaduta o è rovinata. */
-function leggiPausaGemini(raw, adessoMs) {
-  let o;
-  try { o = JSON.parse(raw); } catch (_) { return null; }
-  if (!o || typeof o !== 'object' || Array.isArray(o) || typeof o.fino !== 'number' || !Number.isFinite(o.fino) || o.fino <= adessoMs) return null;
-  return { fino: o.fino, motivo: _str(o.motivo).slice(0, 200) };
-}
-
-function _messaggio429(info, d) {
-  const mod = info && info.modello ? '"' + info.modello + '"' : '';
-  const lim = info && Number.isFinite(info.limite) ? info.limite : null;
-  switch (info && info.tipo) {
-    case 'zero': return 'il modello ' + (mod ? mod + ' ' : '') + 'non è incluso nel piano gratuito della tua chiave (limite 0)';
-    case 'giorno': return 'quota giornaliera gratuita esaurita' + (lim !== null ? ' (' + lim + ' richieste al giorno' + (mod ? ' per ' + mod : '') + ')' : (mod ? ' (' + mod + ')' : ''));
-    case 'minuto': return 'troppe richieste in un minuto' + (lim !== null ? ' (limite ' + lim + ' al minuto)' : '');
-    default: return 'quota gratuita esaurita o troppe richieste' + (d ? ' (' + d + ')' : '');
-  }
-}
-
-/** Messaggio comprensibile per un errore HTTP dell'API Gemini (mai contiene la chiave). Per il 429, `info` da leggiLimiteGemini. */
-function messaggioErroreGemini(status, dettaglio, info) {
-  const d = String(dettaglio || '').slice(0, 160);
-  if (status === 400 && /api key|api_key/i.test(d)) return 'chiave API non valida: controllala in Impostazioni';
-  if (status === 400) return 'richiesta rifiutata da Gemini' + (d ? ' (' + d + ')' : '');
-  if (status === 401 || status === 403) return 'chiave API non autorizzata o non abilitata per questo modello';
-  if (status === 404) return 'modello non trovato' + (d ? ' (' + d + ')' : '') + ': controlla il nome del modello in Impostazioni';
-  if (status === 429) return _messaggio429(info, d);
-  if (status >= 500) return 'servizio Gemini temporaneamente non disponibile';
-  return 'errore Gemini ' + status;
-}
-
-/**
- * I modelli Gemini 3.x e gli alias *-latest "ragionano" prima di rispondere (livello medio/alto di
- * default): con foto e risposta JSON possono impiegare più dell'attesa dell'app. Per leggere uno
- * scontrino basta un ragionamento minimo. Per gli altri modelli restituisce `corpo` tale e quale
- * (stesso oggetto), perché i 2.x usano un'altra opzione e rifiuterebbero questa.
- */
-function conRagionamentoRidotto(corpo, modello) {
-  if (!/^gemini-(?:3|flash-latest|flash-lite-latest)/i.test(String(modello || ''))) return corpo;
-  return { ...corpo, generationConfig: { ...(corpo.generationConfig || {}), thinkingConfig: { thinkingLevel: 'low' } } };
-}
-/** Un 400 che cita il "thinking": il modello non accetta il livello di ragionamento, si riprova senza. */
-function erroreRagionamentoGemini(status, dettaglio) {
-  return status === 400 && /thinking/i.test(String(dettaglio || ''));
-}
 function _tokenNome(s) { return normTesto(s).split(' ').filter(Boolean); }
 /**
  * Quanto la lettura `letta` coincide con il riferimento `rif` (entrambe: [{prodotto, prezzo}]).
@@ -1038,7 +812,7 @@ if (typeof module !== 'undefined' && module.exports) {
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
     costruisciRichiestaGroq, testoRispostaGroq, scegliModelloGroq, durataGroqMs, classificaErroreGroq, leggiConfigGroq, aggiornaConfigGroq, leggiPausaGroq, configDaVecchiaIA,
-    costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, controlloTotale, sommaAttesaLettura, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
+    promptScontrino, normalizzaRispostaIA, controlloTotale, sommaAttesaLettura, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
   };

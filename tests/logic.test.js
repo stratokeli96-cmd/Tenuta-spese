@@ -319,28 +319,17 @@ test('validaStato: regoleBanca ripulite (niente __proto__), origine banca e rif 
   assert.equal(ok.movimenti[0].rif, 'r1');
 });
 
-/* ---------------- Scontrini: Gemini, confronto OCR, analisi prodotti ---------------- */
+/* ---------------- Scontrini: Groq, OCR, analisi prodotti ---------------- */
 const CATS = ['Ortofrutta', 'Latticini e Uova', 'Altro'];
 
-test('costruisciRichiestaGemini: immagini, schema, categorie nel prompt e nell\'enum', () => {
-  const r = L.costruisciRichiestaGemini([{ mime: 'image/jpeg', base64: 'AAA' }, { mime: 'image/jpeg', base64: 'BBB' }], CATS);
-  const parts = r.contents[0].parts;
-  assert.equal(parts.length, 3);
-  assert.match(parts[0].text, /Ortofrutta, Latticini e Uova, Altro/);
-  assert.deepEqual(parts[1], { inline_data: { mime_type: 'image/jpeg', data: 'AAA' } });
-  assert.equal(r.generationConfig.responseMimeType, 'application/json');
-  assert.deepEqual(r.generationConfig.responseSchema.properties.righe.items.properties.categoria.enum, CATS);
-  assert.equal(r.generationConfig.temperature, 0);
-});
-
-test('normalizzaRispostaGemini: righe valide, categoria ignota -> Altro, scarti e avvisi', () => {
+test('normalizzaRispostaIA: righe valide, categoria ignota -> Altro, scarti e avvisi', () => {
   const raw = '```json\n' + JSON.stringify({ negozio: 'Penny', data: '03/11/2026', totale: 10.5, righe: [
     { prodotto: ' Mele  Golden ', categoria: 'Ortofrutta', prezzo: 2.5 },
     { prodotto: 'Latte', categoria: 'Boh', prezzo: '1,49' },
     { prodotto: 'Sconto', categoria: 'Altro', prezzo: -0.5 },
     { prodotto: '', prezzo: 3 }, 'x'
   ] }) + '\n```';
-  const r = L.normalizzaRispostaGemini(raw, CATS);
+  const r = L.normalizzaRispostaIA(raw, CATS, 'Groq');
   assert.equal(r.data, '2026-11-03');
   assert.deepEqual(r.righe.map(x => [x.prodotto, x.categoria, x.prezzo]), [['Mele Golden', 'Ortofrutta', 2.5], ['Latte', 'Altro', 1.49]]);
   assert.equal(r.totale, 3.99);
@@ -349,59 +338,24 @@ test('normalizzaRispostaGemini: righe valide, categoria ignota -> Altro, scarti 
   assert.equal(r.errori.length, 0);
 });
 
-test('normalizzaRispostaGemini: input non valido -> errori, mai eccezioni', () => {
-  assert.equal(L.normalizzaRispostaGemini('non json', CATS).errori.length, 1);
-  assert.equal(L.normalizzaRispostaGemini(null, CATS).errori.length, 1);
-  assert.equal(L.normalizzaRispostaGemini({ righe: [] }, CATS).errori.length, 1);
-  assert.equal(L.normalizzaRispostaGemini({ righe: [{ prodotto: 'a', prezzo: 1 }], totale: 1 }, CATS).avvisi.length, 0);
+test('normalizzaRispostaIA: input non valido -> errori, mai eccezioni', () => {
+  assert.equal(L.normalizzaRispostaIA('non json', CATS, 'Groq').errori.length, 1);
+  assert.equal(L.normalizzaRispostaIA(null, CATS, 'Groq').errori.length, 1);
+  assert.equal(L.normalizzaRispostaIA({ righe: [] }, CATS, 'Groq').errori.length, 1);
+  assert.equal(L.normalizzaRispostaIA({ righe: [{ prodotto: 'a', prezzo: 1 }], totale: 1 }, CATS, 'Groq').avvisi.length, 0);
 });
 
-test('costruisciRichiestaOpenRouter: immagini come data URL, json solo se supportato', () => {
-  const r = L.costruisciRichiestaOpenRouter([{ mime: 'image/jpeg', base64: 'AAA' }], CATS, 'x/y:free', true);
-  assert.equal(r.model, 'x/y:free');
-  assert.equal(r.temperature, 0);
-  assert.equal(r.messages[0].content[1].image_url.url, 'data:image/jpeg;base64,AAA');
-  assert.match(r.messages[0].content[0].text, /righe/);
-  assert.match(r.messages[0].content[0].text, /Ortofrutta, Latticini e Uova, Altro/);
-  assert.deepEqual(r.response_format, { type: 'json_object' });
-  assert.equal('response_format' in L.costruisciRichiestaOpenRouter([], CATS, 'x', false), false);
-});
-test('promptScontrino: stesso testo usato da Gemini, con la forma JSON', () => {
+test('promptScontrino: categorie elencate e forma JSON della risposta', () => {
   const p = L.promptScontrino(CATS);
-  assert.equal(L.costruisciRichiestaGemini([], CATS).contents[0].parts[0].text, p);
-  assert.match(p, /"righe"/);
-});
-test('testoRispostaOpenRouter: stringa, array di parti, vuoto', () => {
-  assert.equal(L.testoRispostaOpenRouter({ choices: [{ message: { content: '{"a":1}' } }] }), '{"a":1}');
-  assert.equal(L.testoRispostaOpenRouter({ choices: [{ message: { content: [{ type: 'text', text: '{"a"' }, { type: 'text', text: ':1}' }] } }] }), '{"a":1}');
-  assert.equal(L.testoRispostaOpenRouter({}), '');
-  assert.equal(L.testoRispostaOpenRouter(null), '');
+  assert.match(p, new RegExp(CATS.join(', ')));
+  assert.match(p, /"righe": \[\{"prodotto"/);
 });
 test('normalizzaRispostaIA: JSON in mezzo a testo, nome servizio nei messaggi', () => {
-  const r = L.normalizzaRispostaIA('Ecco:\n```json\n{"righe":[{"prodotto":"Latte","prezzo":1.2}],"totale":1.2}\n```\nFine', CATS, 'OpenRouter');
+  const r = L.normalizzaRispostaIA('Ecco:\n```json\n{"righe":[{"prodotto":"Latte","prezzo":1.2}],"totale":1.2}\n```\nFine', CATS, 'Groq');
   assert.equal(r.righe.length, 1); assert.equal(r.errori.length, 0);
-  assert.match(L.normalizzaRispostaIA('boh', CATS, 'OpenRouter').errori[0], /OpenRouter/);
-  assert.match(L.normalizzaRispostaIA({ righe: [] }, CATS, 'OpenRouter').errori[0], /OpenRouter/);
+  assert.match(L.normalizzaRispostaIA('boh', CATS, 'Groq').errori[0], /Groq/);
+  assert.match(L.normalizzaRispostaIA({ righe: [] }, CATS, 'Groq').errori[0], /Groq/);
 });
-test('scegliModelloOpenRouter: solo :free con immagini e prezzo 0, contesto maggiore, esclusioni, null', () => {
-  const m = (id, img, prezzo, ctx, params = []) => ({ id, context_length: ctx, architecture: { input_modalities: img ? ['text', 'image'] : ['text'] }, pricing: { prompt: prezzo, completion: prezzo }, supported_parameters: params });
-  const el = [m('a/testo:free', false, '0', 900000), m('b/vis', true, '0.000001', 900000), m('c/vis:free', true, '0', 128000, ['response_format']), m('d/vis:free', true, '0', 262000)];
-  assert.deepEqual(L.scegliModelloOpenRouter(el), { id: 'd/vis:free', json: false });
-  assert.deepEqual(L.scegliModelloOpenRouter(el, ['d/vis:free']), { id: 'c/vis:free', json: true });
-  assert.equal(L.scegliModelloOpenRouter([m('a/testo:free', false, '0', 1)]), null);
-  assert.equal(L.scegliModelloOpenRouter(null), null);
-  assert.equal(L.scegliModelloOpenRouter([null, 'x', {}]), null);
-});
-test('messaggioErroreOpenRouter: casi principali, mai la chiave', () => {
-  assert.match(L.messaggioErroreOpenRouter(401, ''), /chiave/);
-  assert.match(L.messaggioErroreOpenRouter(402, ''), /credito/);
-  assert.match(L.messaggioErroreOpenRouter(429, ''), /limite/);
-  assert.match(L.messaggioErroreOpenRouter(404, ''), /immagini/);
-  assert.match(L.messaggioErroreOpenRouter(400, 'No endpoints found that support image input'), /immagini/);
-  assert.match(L.messaggioErroreOpenRouter(503, ''), /non disponibile/);
-  assert.match(L.messaggioErroreOpenRouter(418, ''), /418/);
-});
-
 test('controlloTotale: ok, diverso con delta, mancante', () => {
   assert.deepEqual(L.controlloTotale(10.1 + 0.2, 10.3), { stato: 'ok', delta: 0 });
   assert.deepEqual(L.controlloTotale(12.5, 10), { stato: 'diverso', delta: 2.5 });
@@ -473,142 +427,6 @@ test('archivio: le righe prodotto del mese seguono il dettaglio (separa/ricompon
   assert.equal(leggero.archivioMesi[0].nRighe, 1);
   assert.deepEqual(L.ricomponiArchivio(leggero, dettagli).archivioMesi[0].righeProdotto, [{ id: 'r', prodotto: 'Latte', prezzo: 1 }]);
 });
-
-test('messaggioErroreGemini: messaggi chiari per i casi comuni', () => {
-  assert.match(L.messaggioErroreGemini(400, 'API key not valid. Please pass a valid API key.'), /chiave API non valida/);
-  assert.match(L.messaggioErroreGemini(404, ''), /modello non trovato/);
-  assert.match(L.messaggioErroreGemini(429, ''), /quota/);
-  assert.match(L.messaggioErroreGemini(503, ''), /non disponibile/);
-  assert.match(L.messaggioErroreGemini(418, ''), /418/);
-});
-
-test('scegliModelloGemini: flash stabile più recente prima dell\'alias, esclusioni', () => {
-  const m = (n, met = ['generateContent']) => ({ name: 'models/' + n, supportedGenerationMethods: met });
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-flash-latest'), m('gemini-3-flash')]), 'gemini-3-flash');
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash'), m('gemini-3-flash'), m('gemini-2.5-pro'), m('gemini-3-flash-lite'), m('gemini-3-flash-preview')]), 'gemini-3-flash');
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash-image'), m('gemini-2.0-flash-exp'), m('embedding-001', ['embedContent']), m('gemini-2.5-flash-tts')]), 'gemini-2.0-flash-exp'); // ripiego: meglio di niente
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-pro'), m('gemini-2.5-flash-lite')]), 'gemini-2.5-flash-lite');
-  assert.equal(L.scegliModelloGemini([m('gemini-3-flash', ['embedContent'])]), null);   // non supporta generateContent
-  assert.equal(L.scegliModelloGemini([]), null);
-  assert.equal(L.scegliModelloGemini(null), null);
-  assert.equal(L.scegliModelloGemini([m('gemini-flash-latest'), m('gemini-3.8-flash')], ['gemini-3.8-flash']), 'gemini-flash-latest');
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash')], ['gemini-2.5-flash']), null);   // elencato ma ritirato: non si ripropone
-});
-
-test('improntaChiave: stabile, 8 hex, diversa per chiavi diverse, non contiene la chiave', () => {
-  const a = L.improntaChiave('AIzaSyCHIAVE-1'), b = L.improntaChiave('AIzaSyCHIAVE-2');
-  assert.match(a, /^[0-9a-f]{8}$/); assert.equal(a, L.improntaChiave('AIzaSyCHIAVE-1')); assert.notEqual(a, b);
-});
-test('quotaModelloFinita: zero e giorno sì, minuto e sconosciuto no', () => {
-  assert.equal(L.quotaModelloFinita({ tipo: 'zero' }), true);
-  assert.equal(L.quotaModelloFinita({ tipo: 'giorno' }), true);
-  assert.equal(L.quotaModelloFinita({ tipo: 'minuto' }), false);
-  assert.equal(L.quotaModelloFinita(null), false);
-});
-test('esclusi Gemini: aggiunta, scadenza, altra chiave, JSON rovinato', () => {
-  const t = 1_000_000;
-  let raw = L.aggiungiEsclusoGemini(null, 'aaaa1111', 'gemini-flash-latest', t + 5000, t);
-  raw = L.aggiungiEsclusoGemini(raw, 'aaaa1111', 'gemini-2.5-flash', t + 100, t);
-  assert.deepEqual(L.leggiEsclusiGemini(raw, 'aaaa1111', t).sort(), ['gemini-2.5-flash', 'gemini-flash-latest']);
-  assert.deepEqual(L.leggiEsclusiGemini(raw, 'aaaa1111', t + 200), ['gemini-flash-latest']);
-  assert.deepEqual(L.leggiEsclusiGemini(raw, 'bbbb2222', t), []);
-  assert.deepEqual(L.leggiEsclusiGemini('{rotto', 'aaaa1111', t), []);
-  assert.deepEqual(L.leggiEsclusiGemini(null, 'aaaa1111', t), []);
-  const altra = L.aggiungiEsclusoGemini(raw, 'bbbb2222', 'gemini-2.5-flash', t + 5000, t);
-  assert.deepEqual(L.leggiEsclusiGemini(altra, 'bbbb2222', t), ['gemini-2.5-flash']);
-  assert.deepEqual(L.leggiEsclusiGemini(altra, 'aaaa1111', t), []);
-  assert.deepEqual(L.leggiEsclusiGemini(L.aggiungiEsclusoGemini(null, 'aaaa1111', '__proto__', t + 5000, t), 'aaaa1111', t), ['__proto__']);
-});
-test('scegliModelloGemini: flash stabile prima dell\'alias, poi lite, null se tutto escluso', () => {
-  const m = n => ({ name: 'models/' + n, supportedGenerationMethods: ['generateContent'] });
-  const el = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3-flash-preview'].map(m);
-  assert.equal(L.scegliModelloGemini(el), 'gemini-2.5-flash');
-  assert.equal(L.scegliModelloGemini(el, ['gemini-2.5-flash', 'gemini-2.0-flash']), 'gemini-flash-latest');
-  assert.equal(L.scegliModelloGemini(el, ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest']), 'gemini-2.5-flash-lite');
-  assert.equal(L.scegliModelloGemini([m('gemini-2.5-flash')], ['gemini-2.5-flash']), null);
-});
-
-test('messaggioErroreGemini: il 404 riporta il dettaglio di Google (senza la chiave)', () => {
-  const m = L.messaggioErroreGemini(404, 'models/gemini-x is not found for API version v1beta');
-  assert.match(m, /modello non trovato \(models\/gemini-x is not found/);
-});
-
-const err429 = (violazioni, retry, message = '') => ({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message, details: [
-  { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: violazioni },
-  ...(retry ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: retry }] : [])
-] } });
-
-test('leggiLimiteGemini: riconosce limite al giorno, al minuto e limite 0 dal 429 di Google', () => {
-  assert.deepEqual(L.leggiLimiteGemini(err429([{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaValue: '20', quotaDimensions: { model: 'gemini-3.8-flash' } }], '37s')),
-    { tipo: 'giorno', limite: 20, modello: 'gemini-3.8-flash', attesaMs: 37000 });
-  assert.deepEqual(L.leggiLimiteGemini(err429([{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', quotaValue: '5', quotaDimensions: { model: 'gemini-3.8-flash' } }], '12.5s')),
-    { tipo: 'minuto', limite: 5, modello: 'gemini-3.8-flash', attesaMs: 12500 });
-  assert.equal(L.leggiLimiteGemini(err429([{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', quotaValue: '0' }])).tipo, 'zero');
-  assert.equal(L.leggiLimiteGemini(err429([
-    { quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', quotaValue: '5' },
-    { quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaValue: '20' }])).tipo, 'giorno');
-});
-
-test('leggiLimiteGemini: senza details usa il testo, altrimenti "sconosciuto"', () => {
-  assert.deepEqual(L.leggiLimiteGemini({ error: { message: 'Quota exceeded for metric: x, limit: 20, model: gemini-3.8-flash per day. Please retry in 30.2s.' } }),
-    { tipo: 'giorno', limite: 20, modello: 'gemini-3.8-flash', attesaMs: 30200 });
-  for (const x of [null, undefined, '', 'not json', 42, {}, { error: {} }]) {
-    assert.deepEqual(L.leggiLimiteGemini(x), { tipo: 'sconosciuto', limite: null, modello: '', attesaMs: null }, String(x));
-  }
-});
-
-test('prossimaMezzanotteLosAngeles: anche a cavallo del cambio d\'ora USA', () => {
-  const t = s => Date.parse(s);
-  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-11-17T11:50:00Z')), t('2026-11-18T08:00:00Z'));   // PST
-  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-03-08T09:00:00Z')), t('2026-03-09T07:00:00Z'));   // 01:00 PST → mezzanotte PDT
-  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-11-01T08:30:00Z')), t('2026-11-02T08:00:00Z'));   // 01:30 PDT → mezzanotte PST
-  assert.equal(L.prossimaMezzanotteLosAngeles(t('2026-11-18T08:00:00Z')), t('2026-11-19T08:00:00Z'));   // esattamente a mezzanotte → la successiva
-});
-
-test('finePausaGemini: giorno e zero fino a mezzanotte LA, minuto col retryDelay, ripiego 60 s', () => {
-  const ora = Date.parse('2026-11-17T11:50:00Z');
-  assert.equal(L.finePausaGemini({ tipo: 'giorno', attesaMs: 37000 }, ora), Date.parse('2026-11-18T08:00:00Z'));
-  assert.equal(L.finePausaGemini({ tipo: 'zero', attesaMs: null }, ora), Date.parse('2026-11-18T08:00:00Z'));
-  assert.equal(L.finePausaGemini({ tipo: 'minuto', attesaMs: 12500 }, ora), ora + 12500);
-  assert.equal(L.finePausaGemini({ tipo: 'minuto', attesaMs: null }, ora), ora + 60000);
-  assert.equal(L.finePausaGemini({ tipo: 'sconosciuto', attesaMs: null }, ora), ora + 60000);
-});
-
-test('leggiPausaGemini: valida, scaduta o rovinata', () => {
-  const ora = 1_000_000;
-  assert.deepEqual(L.leggiPausaGemini(JSON.stringify({ fino: ora + 5000, motivo: 'quota' }), ora), { fino: ora + 5000, motivo: 'quota' });
-  for (const raw of [null, '', '{', '[]', JSON.stringify({ fino: ora }), JSON.stringify({ fino: 'domani' }), JSON.stringify({ motivo: 'x' })]) {
-    assert.equal(L.leggiPausaGemini(raw, ora), null, String(raw));
-  }
-  assert.equal(L.leggiPausaGemini(JSON.stringify({ fino: ora + 1, motivo: 'x'.repeat(500) }), ora).motivo.length, 200);
-});
-
-test('messaggioErroreGemini: il 429 dice quale limite è stato superato', () => {
-  assert.match(L.messaggioErroreGemini(429, '', { tipo: 'zero', limite: 0, modello: 'gemini-3.8-flash', attesaMs: null }), /"gemini-3\.8-flash" non è incluso nel piano gratuito/);
-  assert.match(L.messaggioErroreGemini(429, '', { tipo: 'giorno', limite: 20, modello: 'gemini-3.8-flash', attesaMs: null }), /quota giornaliera gratuita esaurita \(20 richieste al giorno per "gemini-3\.8-flash"\)/);
-  assert.match(L.messaggioErroreGemini(429, '', { tipo: 'minuto', limite: 5, modello: '', attesaMs: 1000 }), /troppe richieste in un minuto \(limite 5 al minuto\)/);
-  assert.match(L.messaggioErroreGemini(429, ''), /quota/);
-});
-
-test('conRagionamentoRidotto: solo Gemini 3.x e alias latest; gli altri modelli restano invariati', () => {
-  const corpo = { contents: [], generationConfig: { temperature: 0, maxOutputTokens: 1024 } };
-  for (const m of ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-3-flash', 'gemini-3.5-flash']) {
-    const r = L.conRagionamentoRidotto(corpo, m);
-    assert.notEqual(r, corpo, m);
-    assert.deepEqual(r.generationConfig, { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'low' } }, m);
-  }
-  assert.equal(corpo.generationConfig.thinkingConfig, undefined);   // l'originale non viene modificato
-  for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash-exp', '', null]) assert.equal(L.conRagionamentoRidotto(corpo, m), corpo, String(m));
-  assert.deepEqual(L.conRagionamentoRidotto({ contents: [] }, 'gemini-flash-latest').generationConfig, { thinkingConfig: { thinkingLevel: 'low' } });
-});
-
-test('erroreRagionamentoGemini: solo un 400 che cita il thinking', () => {
-  assert.equal(L.erroreRagionamentoGemini(400, 'Unable to submit request because thinking level is not supported by this model'), true);
-  assert.equal(L.erroreRagionamentoGemini(400, 'API key not valid. Please pass a valid API key.'), false);
-  assert.equal(L.erroreRagionamentoGemini(404, 'thinking'), false);
-  assert.equal(L.erroreRagionamentoGemini(400, undefined), false);
-});
-
 
 /* ---------- Groq ---------- */
 const conf = o => JSON.stringify(o);
@@ -682,4 +500,10 @@ test('scansione: niente più gara a tempo né catena di servizi', () => {
 test('Groq: chiave solo nell\'header Authorization, mai nell\'URL', () => {
   assert.match(html, /Authorization['"]?\s*:\s*['"]Bearer ['"]\s*\+/);
   assert.doesNotMatch(html, /api\.groq\.com[^'"`]*[?&](key|api_key)=/i);
+});
+test('nessun resto di Gemini/OpenRouter nel codice dell\'app', () => {
+  for (const f of ['index.html', 'logic.js', 'sw.js']) {
+    // unica eccezione: il nome della vecchia chiave di localStorage, cancellata alla migrazione
+    assert.doesNotMatch(fs.readFileSync(path.join(root, f), 'utf8').replace("'tenuta-spese.ia-pausa-openrouter'", ''), /gemini|openrouter|generativelanguage/i, f);
+  }
 });

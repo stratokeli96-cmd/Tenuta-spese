@@ -2091,8 +2091,8 @@ table.data tbody tr { transition: background var(--t-fast); }
    in sw.js: serve a verificare da Impostazioni se il telefono ha
    scaricato l'ultima versione pubblicata.
    ============================================================ */
-const APP_VERSION = '2026.11.18a';
-const APP_BUILD_NOTE = 'Gemini: una sola richiesta per scontrino, pausa automatica quando la quota gratuita finisce (con il limite superato), niente più raffiche di modelli di riserva';
+const APP_VERSION = '2026.11.24a';
+const APP_BUILD_NOTE = 'Scontrini: lettura con Groq (gratuito, modello scelto da solo), OCR del telefono solo se Groq non risponde';
 
 /* ============================================================
    STATO + MIGRAZIONE
@@ -3678,6 +3678,7 @@ async function gestisciFileOCR(file) {
 
     const lettura = ultimaLettura = { ocr: null, ocrText: '', ia: null, iaFonte: null, iaModello: '', foto: null };
     const attiva = () => ultimaLettura === lettura;   // una nuova scansione invalida le vecchie
+    ocrText = '';   // il testo grezzo di una scansione precedente non vale per questa
 
     // Prima Groq (se attivo): la scansione lo aspetta. L'OCR locale parte solo se Groq non c'è o fallisce.
     let parsed = null, fonte = 'ocr', notaIA = '';

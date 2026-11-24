@@ -56,7 +56,7 @@ const Archivio = (() => {
       await richiesta(corrente.clear());
       await Promise.all(recs.map(r => richiesta(corrente.put(r))));
     }),
-    /** Casi di prova degli scontrini (OCR locale vs Gemini vs correzione finale), per migliorare l'OCR. */
+    /** Casi di prova degli scontrini (OCR locale vs IA vs correzione finale), per migliorare l'OCR. */
     salvaCaso: rec => tx([STORE_CASI], 'readwrite', t => richiesta(t.objectStore(STORE_CASI).put(rec))),
     tuttiCasi: () => tx([STORE_CASI], 'readonly', t => richiesta(t.objectStore(STORE_CASI).getAll())),
     svuotaCasi: () => tx([STORE_CASI], 'readwrite', t => richiesta(t.objectStore(STORE_CASI).clear())),
