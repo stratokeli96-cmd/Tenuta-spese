@@ -507,3 +507,16 @@ test('nessun resto di Gemini/OpenRouter nel codice dell\'app', () => {
     assert.doesNotMatch(fs.readFileSync(path.join(root, f), 'utf8').replace("'tenuta-spese.ia-pausa-openrouter'", ''), /gemini|openrouter|generativelanguage/i, f);
   }
 });
+test('Impostazioni Groq: "Prova" non sovrascrive i campi non ancora salvati', () => {
+  const i = html.indexOf("getElementById('btn-groq-prova')");
+  const j = html.indexOf('\n});', i);
+  assert.ok(i > 0 && j > i);
+  assert.doesNotMatch(html.slice(i, j), /renderIA\(/);
+});
+test('scegliModelloGroq: anche tra i modelli con campo esplicito valgono le preferenze', () => {
+  const el = [
+    { id: 'llama-guard-4-12b', input_modalities: ['text', 'image'] },
+    { id: 'meta-llama/llama-4-scout-17b-16e-instruct', input_modalities: ['text', 'image'] }
+  ];
+  assert.equal(L.scegliModelloGroq(el), 'meta-llama/llama-4-scout-17b-16e-instruct');
+});

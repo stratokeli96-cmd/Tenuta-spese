@@ -653,7 +653,9 @@ function scegliModelloGroq(elenco, escludi = []) {
   if (!Array.isArray(elenco)) return null;
   const ok = elenco.filter(m => m && typeof m === 'object' && typeof m.id === 'string' && m.id
     && m.active !== false && !escludi.includes(m.id) && (_immaginiEsplicite(m) || _RE_VISION_GROQ.test(m.id)));
-  const rango = m => _immaginiEsplicite(m) ? -1 : (i => i < 0 ? _PREFERENZE_GROQ.length : i)(_PREFERENZE_GROQ.findIndex(r => r.test(m.id)));
+  // Prima chi dichiara le immagini, poi chi le legge "dal nome"; in ciascun gruppo valgono le preferenze.
+  const pref = m => (i => i < 0 ? _PREFERENZE_GROQ.length : i)(_PREFERENZE_GROQ.findIndex(r => r.test(m.id)));
+  const rango = m => (_immaginiEsplicite(m) ? 0 : _PREFERENZE_GROQ.length + 1) + pref(m);
   ok.sort((a, b) => rango(a) - rango(b) || a.id.localeCompare(b.id));
   return ok.length ? ok[0].id : null;
 }

@@ -5675,6 +5675,11 @@ async function renderIA() {
   document.getElementById('groq-attivo').checked = c.attivo;
   document.getElementById('groq-chiave').value = c.chiave;
   document.getElementById('ia-foto').checked = c.salvaFoto;
+  await renderStatoGroq();
+}
+/** Solo badge, modello, stato e casi di prova: non tocca i campi (che possono contenere una chiave non ancora salvata). */
+async function renderStatoGroq() {
+  const c = configGroq();
   const pausa = c.attivo ? pausaGroq() : null;
   const badge = !c.attivo ? 'non attivo' : c.chiave.length <= 10 ? 'manca la chiave' : c.chiaveNonValida ? 'chiave non valida'
     : pausa ? 'in pausa fino alle ' + oraBreve(pausa.fino) : groqSenzaModello ? 'nessun modello' : 'pronto';
@@ -5728,10 +5733,10 @@ document.getElementById('btn-groq-prova').addEventListener('click', async () => 
     const s = ((Date.now() - t0) / 1000).toFixed(1).replace('.', ',');
     const c = configGroq();
     if (c.chiave === chiave && c.chiaveNonValida) salvaConfigGroq({ ...c, chiaveNonValida: false });
-    renderIA();
+    renderStatoGroq();
     mostraStatoGroq('Funziona: modello «' + modello + '», risposta in ' + s + ' s.' + (chiave !== c.chiave ? ' Premi Salva per usare questa chiave.' : ''), 'var(--success)');
   } catch (e) {
-    renderIA();
+    renderStatoGroq();
     mostraStatoGroq('Non funziona: ' + e.message + '.', 'var(--danger)');
   } finally { btn.disabled = false; }
 });
