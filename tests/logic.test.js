@@ -101,13 +101,13 @@ test('sw.js CACHE_VERSION coincide con APP_VERSION', () => {
   assert.equal(c, a);
 });
 
-test('sw.js: le richieste a Gemini non passano mai dalla cache del service worker', () => {
+test('sw.js: le richieste a Groq non passano mai dalla cache del service worker', () => {
   const handlers = {};
   const self = { addEventListener: (t, f) => { handlers[t] = f; }, location: { origin: 'https://app.example' }, skipWaiting() {}, clients: { claim() {} } };
   const caches = { match: () => Promise.resolve(undefined), open: () => Promise.resolve({ put: () => Promise.resolve(), keys: () => Promise.resolve([]) }) };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), { self, caches, fetch: () => Promise.resolve({ ok: false }), URL, Promise, console });
   const servitaDalSw = url => { let usata = false; handlers.fetch({ request: { method: 'GET', url }, respondWith() { usata = true; } }); return usata; };
-  assert.equal(servitaDalSw('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200'), false);   // elenco modelli: sempre fresco
+  assert.equal(servitaDalSw('https://api.groq.com/openai/v1/models'), false);   // elenco modelli: sempre fresco
   assert.equal(servitaDalSw('https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js'), true);          // i CDN restano in cache
 });
 

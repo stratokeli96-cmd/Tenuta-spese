@@ -1830,54 +1830,29 @@ table.data tbody tr { transition: background var(--t-fast); }
       </div>
 
       <div class="widget" style="margin-top: var(--sp-lg);" id="widget-ia">
-        <div class="section-title">IA per gli scontrini</div>
+        <div class="section-title">Lettura scontrini con Groq</div>
         <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 10px;">
-          Ordine di lettura: <strong>Gemini → OpenRouter → OCR del telefono</strong>. Si passa al successivo solo se il precedente non è configurato, è in pausa o non risponde.
-          Le chiavi sono salvate <strong>solo su questo dispositivo</strong> e non finiscono nei backup.
+          Groq legge la foto dello scontrino gratis: la <strong>foto viene inviata a Groq</strong> per leggerla. Se Groq non è attivo o non risponde si usa l'OCR del telefono.
+          La chiave resta <strong>solo su questo dispositivo</strong> e non finisce nei backup.
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Crea una chiave gratuita</a>, incollala qui, premi Prova e poi Salva.
         </p>
 
         <div class="ia-blocco">
-          <div class="ia-blocco-testa"><strong>Gemini (Google)</strong><span id="ia-gem-stato" class="ia-badge"></span></div>
-          <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
-            La <strong>foto dello scontrino viene inviata a Google</strong> per leggerla (piano gratuito: le richieste possono essere usate da Google per migliorare i suoi servizi).
-          </p>
-          <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="ia-attivo" /> Usa Gemini</label>
-          <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
-            <div class="form-group"><label class="form-label">Chiave API (Google AI Studio)</label><input type="password" id="ia-chiave" autocomplete="off" placeholder="incolla qui la chiave" /></div>
-            <div class="form-group"><label class="form-label">Modello</label><input type="text" id="ia-modello" list="ia-modelli" placeholder="gemini-2.5-flash" /><datalist id="ia-modelli"></datalist></div>
-          </div>
+          <div class="ia-blocco-testa"><strong>Groq</strong><span id="groq-badge" class="ia-badge"></span></div>
+          <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="groq-attivo" /> Usa Groq per leggere gli scontrini</label>
+          <div class="form-group"><label class="form-label">Chiave API (Groq)</label><input type="password" id="groq-chiave" autocomplete="off" placeholder="gsk_…" /></div>
+          <label style="display:flex; gap:8px; align-items:center; margin:8px 0;"><input type="checkbox" id="ia-foto" /> Conserva una copia ridotta della foto nei casi di prova (serve a migliorare l'OCR)</label>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-secondary" id="btn-ia-test">Prova la connessione</button>
-            <button class="btn btn-ghost" id="btn-ia-modelli" title="Chiede a Google quali modelli può usare la tua chiave">Cerca modello</button>
+            <button class="btn btn-secondary" id="btn-groq-prova">Prova</button>
+            <button class="btn btn-primary" id="btn-groq-salva">Salva</button>
           </div>
-          <p id="ia-stato" style="font-size:13px; margin-top:8px;"></p>
-        </div>
-
-        <div class="ia-blocco">
-          <div class="ia-blocco-testa"><strong>OpenRouter (riserva)</strong><span id="or-badge" class="ia-badge"></span></div>
-          <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
-            Usa solo modelli gratuiti (":free"). Con OpenRouter la <strong>foto viene inviata a OpenRouter e al fornitore del modello gratuito</strong>, che può usarla per migliorare i suoi servizi. Chiave gratuita su openrouter.ai → Keys.
-          </p>
-          <label style="display:flex; gap:8px; align-items:center; margin-bottom:10px;"><input type="checkbox" id="or-attivo" /> Usa OpenRouter</label>
-          <div class="form-row" style="grid-template-columns: 2fr 1fr; gap: 10px;">
-            <div class="form-group"><label class="form-label">Chiave API (OpenRouter)</label><input type="password" id="or-chiave" autocomplete="off" placeholder="sk-or-…" /></div>
-            <div class="form-group"><label class="form-label">Modello</label><input type="text" id="or-modello" list="or-modelli" placeholder="scelta automatica" /><datalist id="or-modelli"></datalist></div>
-          </div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-secondary" id="btn-or-test">Prova la connessione</button>
-            <button class="btn btn-ghost" id="btn-or-modelli" title="Chiede a OpenRouter i modelli gratuiti che leggono immagini">Cerca modello</button>
-          </div>
-          <p id="or-stato" style="font-size:13px; margin-top:8px;"></p>
-        </div>
-
-        <label style="display:flex; gap:8px; align-items:center; margin:8px 0;"><input type="checkbox" id="ia-foto" /> Conserva una copia ridotta della foto nei casi di prova (serve a migliorare l'OCR)</label>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn btn-primary" id="btn-ia-salva">Salva</button>
+          <p id="groq-modello" style="font-size:13px; margin-top:8px; color: var(--text-muted);"></p>
+          <p id="groq-stato" style="font-size:13px; margin-top:4px;"></p>
         </div>
 
         <div class="section-title" style="margin-top: var(--sp-lg);">Casi di prova per migliorare l'OCR</div>
         <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">
-          Ogni scontrino salvato conserva il testo dell'OCR locale, la lettura dell'IA (Gemini o OpenRouter) e la tua correzione finale. Servono per misurare quanto l'OCR integrato è affidabile e per migliorarlo:
+          Ogni scontrino salvato conserva la lettura dell'OCR locale o di Groq e la tua correzione finale. Servono per misurare quanto l'OCR integrato è affidabile e per migliorarlo:
           esporta il file e passalo a Claude per aggiornare il parser. Quando l'accuratezza è alta puoi spegnere l'IA.
         </p>
         <p id="ia-casi-info" style="font-size:13px; margin-bottom:8px;"></p>
@@ -3540,45 +3515,78 @@ function gestisciSelezioneFile(e) {
 ocrInput.addEventListener('change', gestisciSelezioneFile);
 
 
-/* ---------- Gemini: configurazione e client ---------- */
-const IA_KEY = 'tenuta-spese.ia';   // SOLO localStorage del dispositivo: mai in `stato`, quindi mai nei backup
-const IA_MODELLO_DEFAULT = 'gemini-2.5-flash';   // stabile: l'alias "-latest" spesso punta a un modello senza quota gratuita
-const IA_PAUSA_KEY = 'tenuta-spese.ia-pausa';   // dopo un 429 nessuna richiesta fino a `fino` (solo dispositivo, mai nei backup)
-function configIA() {
-  let c = {};
-  try { c = JSON.parse(localStorage.getItem(IA_KEY) || '{}') || {}; } catch (_) {}
-  return { attivo: !!c.attivo, chiave: String(c.chiave || ''), modello: String(c.modello || IA_MODELLO_DEFAULT).trim() || IA_MODELLO_DEFAULT, salvaFoto: !!c.salvaFoto,
-    orAttivo: !!c.orAttivo, orChiave: String(c.orChiave || ''), orModello: String(c.orModello || '').trim(), orJson: !!c.orJson };
-}
-function salvaConfigIA(c) { try { localStorage.setItem(IA_KEY, JSON.stringify(c)); return true; } catch (_) { return false; } }
-const geminiPronto = () => { const c = configIA(); return c.attivo && c.chiave.length > 10; };
-const oraBreve = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-function pausaGemini() {
+/* ---------- Groq: configurazione e client ---------- */
+const GROQ_KEY = 'tenuta-spese.groq';              // SOLO localStorage del dispositivo: mai in `stato`, quindi mai nei backup
+const GROQ_PAUSA_KEY = 'tenuta-spese.groq-pausa';  // dopo un 429 nessuna richiesta fino a `fino`
+const GROQ_URL = 'https://api.groq.com/openai/v1';
+const VECCHIE_CHIAVI_IA = ['tenuta-spese.ia', 'tenuta-spese.ia-pausa', 'tenuta-spese.ia-pausa-openrouter', 'tenuta-spese.ia-esclusi'];
+function configGroq() {
   let raw = null;
-  try { raw = localStorage.getItem(IA_PAUSA_KEY); } catch (_) { return null; }
-  const p = leggiPausaGemini(raw, Date.now());
-  if (!p && raw !== null) togliPausaGemini();
+  try { raw = localStorage.getItem(GROQ_KEY); } catch (_) { return leggiConfigGroq(null); }
+  if (raw !== null) return leggiConfigGroq(raw);
+  // Primo avvio dopo l'aggiornamento: dalla vecchia configurazione si porta solo `salvaFoto`, le vecchie chiavi si cancellano.
+  let vecchia = null;
+  try { vecchia = localStorage.getItem('tenuta-spese.ia'); } catch (_) {}
+  const c = configDaVecchiaIA(vecchia);
+  salvaConfigGroq(c);
+  try { VECCHIE_CHIAVI_IA.forEach(k => localStorage.removeItem(k)); } catch (_) {}
+  return c;
+}
+function salvaConfigGroq(c) { try { localStorage.setItem(GROQ_KEY, JSON.stringify(c)); return true; } catch (_) { return false; } }
+const groqPronto = () => { const c = configGroq(); return c.attivo && c.chiave.length > 10 && !c.chiaveNonValida; };
+const oraBreve = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+function pausaGroq() {
+  let raw = null;
+  try { raw = localStorage.getItem(GROQ_PAUSA_KEY); } catch (_) { return null; }
+  const p = leggiPausaGroq(raw, Date.now());
+  if (!p && raw !== null) togliPausaGroq();
   return p;
 }
-function mettiInPausaGemini(info, motivo) {
-  const fino = finePausaGemini(info, Date.now());
-  try { localStorage.setItem(IA_PAUSA_KEY, JSON.stringify({ fino, motivo })); } catch (_) {}
-  return fino;
-}
-function togliPausaGemini() { try { localStorage.removeItem(IA_PAUSA_KEY); } catch (_) {} }
-/* Modelli con la quota gratuita finita (429 "limite 0" o giornaliero): esclusi fino alla mezzanotte di LA,
-   legati all'impronta della chiave (mai la chiave). Solo dispositivo, mai nei backup. */
-const IA_ESCLUSI_KEY = 'tenuta-spese.ia-esclusi';
-function esclusiGemini(chiave) {
-  let raw = null;
-  try { raw = localStorage.getItem(IA_ESCLUSI_KEY); } catch (_) {}
-  return leggiEsclusiGemini(raw, improntaChiave(chiave), Date.now());
-}
-function escludiModelloGemini(chiave, modello) {
+function mettiInPausaGroq(fino, motivo) { try { localStorage.setItem(GROQ_PAUSA_KEY, JSON.stringify({ fino, motivo })); } catch (_) {} }
+function togliPausaGroq() { try { localStorage.removeItem(GROQ_PAUSA_KEY); } catch (_) {} }
+
+/**
+ * Una richiesta a Groq (GET se `corpo` è null, altrimenti POST JSON), chiave solo nell'header.
+ * Errori: err.groq = {tipo, pausaFino, messaggio} per le risposte non ok; err.timeout; err.rete.
+ * Un 429 mette Groq in pausa; un 401/403 segna la chiave salvata come non valida.
+ */
+async function richiestaGroq(percorso, chiave, corpo, timeoutMs) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const ora = Date.now();
-    localStorage.setItem(IA_ESCLUSI_KEY, aggiungiEsclusoGemini(localStorage.getItem(IA_ESCLUSI_KEY), improntaChiave(chiave), modello, prossimaMezzanotteLosAngeles(ora), ora));
-  } catch (_) {}
+    const res = await fetch(GROQ_URL + percorso, {
+      method: corpo ? 'POST' : 'GET',
+      headers: corpo ? { 'Authorization': 'Bearer ' + chiave, 'Content-Type': 'application/json' } : { 'Authorization': 'Bearer ' + chiave },
+      body: corpo ? JSON.stringify(corpo) : undefined,
+      signal: ctrl.signal
+    });
+    let j = null;
+    try { j = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      const h = {};
+      res.headers.forEach((v, k) => { h[k.toLowerCase()] = v; });
+      const info = classificaErroreGroq(res.status, j, h, Date.now());
+      if (info.tipo === 'limite') mettiInPausaGroq(info.pausaFino, info.messaggio);
+      if (info.tipo === 'chiave') { const c = configGroq(); if (c.chiave === chiave) salvaConfigGroq({ ...c, chiaveNonValida: true }); }
+      const err = new Error(info.messaggio + (info.tipo === 'limite' ? ' — nessuna nuova richiesta fino alle ' + oraBreve(info.pausaFino) : ''));
+      err.groq = info;
+      throw err;
+    }
+    if (!j) { const err = new Error('risposta di Groq non leggibile'); err.groq = { tipo: 'richiesta', pausaFino: null, messaggio: err.message }; throw err; }
+    return j;
+  } catch (e) {
+    if (e.name === 'AbortError') { const err = new Error('Groq non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi'); err.timeout = true; throw err; }
+    if (e instanceof TypeError) { const err = new Error('rete non raggiungibile'); err.rete = true; throw err; }
+    throw e;
+  } finally { clearTimeout(t); }
+}
+/** Sceglie (e salva) un modello che legge immagini dall'elenco di Groq; null se non ce n'è. */
+async function modelloGroq(chiave, escludi = []) {
+  const j = await richiestaGroq('/models', chiave, null, 20000);
+  const m = scegliModelloGroq(j && j.data, escludi);
+  const c = configGroq();
+  if (c.chiave === chiave) salvaConfigGroq({ ...c, modello: m || '' });
+  return m;
 }
 
 /** Immagine -> JPEG ridotto (lato max `max` px): meno dati inviati, richiesta più veloce. */
@@ -3596,247 +3604,6 @@ function ridimensionaJpeg(dataUrl, max = 1600, qualita = 0.8) {
     img.onerror = () => reject(new Error('immagine non leggibile'));
     img.src = dataUrl;
   });
-}
-
-/** Chiama Gemini col ragionamento ridotto (se il modello lo prevede); se il modello lo rifiuta (400) riprova senza. */
-async function chiamaGemini(corpo, ia, timeoutMs = 90000) {
-  const ridotto = conRagionamentoRidotto(corpo, ia.modello);
-  if (ridotto === corpo) return richiestaGemini(corpo, ia, timeoutMs);
-  try { return await richiestaGemini(ridotto, ia, timeoutMs); }
-  catch (e) {
-    if (!erroreRagionamentoGemini(e.status, e.dettaglio)) throw e;
-    return richiestaGemini(corpo, ia, timeoutMs);
-  }
-}
-
-async function richiestaGemini(corpo, ia, timeoutMs) {
-  const pausa = pausaGemini();
-  if (pausa) {
-    const err = new Error('Gemini in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo);
-    err.pausa = true;
-    throw err;
-  }
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(ia.modello) + ':generateContent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ia.chiave },   // chiave in header, mai nell'URL
-      body: JSON.stringify(corpo),
-      signal: ctrl.signal
-    });
-    if (!res.ok) {
-      let corpoErr = null;
-      try { corpoErr = await res.json(); } catch (_) {}
-      const det = corpoErr?.error?.message || '';
-      const info = res.status === 429 ? leggiLimiteGemini(corpoErr) : null;
-      const quotaModello = quotaModelloFinita(info);   // quota del SOLO modello: si cambia modello, niente pausa
-      let messaggio = messaggioErroreGemini(res.status, det, info);
-      if (info && !quotaModello) messaggio += ' — nessuna nuova richiesta fino alle ' + oraBreve(mettiInPausaGemini(info, messaggio));
-      const err = new Error(messaggio);
-      err.status = res.status;
-      err.dettaglio = det;
-      if (info) err.limite = info;
-      if (quotaModello) err.quotaModello = true;
-      throw err;
-    }
-    const j = await res.json();
-    const testo = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    if (!testo) {
-      const motivo = j.promptFeedback?.blockReason || j.candidates?.[0]?.finishReason || '';
-      const err = new Error(j.promptFeedback?.blockReason ? 'richiesta bloccata da Gemini (' + motivo + ')' : 'risposta vuota da Gemini' + (motivo ? ' (motivo: ' + motivo + ')' : ''));
-      err.rispostaVuota = true;
-      throw err;
-    }
-    return testo;
-  } catch (e) {
-    if (e.name === 'AbortError') {
-      const err = new Error('Gemini non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi');
-      err.timeout = true;
-      throw err;
-    }
-    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
-    throw e;
-  } finally { clearTimeout(t); }
-}
-
-/** Modelli che la chiave può davvero usare (models.list). I nomi cambiano nel tempo: meglio chiederli a Google. */
-async function elencaModelliGemini(chiave, timeoutMs = 20000) {
-  const out = [];
-  let pagina = '';
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    for (let i = 0; i < 4; i++) {
-      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200' + (pagina ? '&pageToken=' + encodeURIComponent(pagina) : ''), {
-        headers: { 'x-goog-api-key': chiave },
-        signal: ctrl.signal
-      });
-      if (!res.ok) {
-        let det = ''; try { det = (await res.json()).error?.message || ''; } catch (_) {}
-        const err = new Error(messaggioErroreGemini(res.status, det)); err.status = res.status; throw err;
-      }
-      const j = await res.json();
-      out.push(...(j.models || []));
-      pagina = j.nextPageToken || '';
-      if (!pagina) break;
-    }
-    return out;
-  } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Google non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi');
-    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
-    throw e;
-  } finally { clearTimeout(t); }
-}
-
-/**
- * Esegue `esegui(ia)`. Se il modello è stato ritirato (404) o ha la quota gratuita finita (429 "limite 0"
- * o giornaliero) prova UNA volta un sostituto scelto dall'elenco di Google, escludendo i modelli già
- * senza quota oggi. Se non resta nessun modello con quota, Gemini va in pausa fino a mezzanotte (LA).
- * Non salva il modello: lo fa chi chiama. -> {risultato, modello, cambiato, motivo: 'ritirato'|'quota'|''}
- */
-async function conSostitutoGemini(ia, esegui) {
-  try {
-    // Modello già senza quota oggi (es. sostituzione fallita per rete): nessuna richiesta sicuramente sprecata.
-    if (esclusiGemini(ia.chiave).includes(ia.modello)) {
-      const err = new Error('il modello "' + ia.modello + '" oggi non ha quota gratuita');
-      err.quotaModello = true;
-      throw err;
-    }
-    return { risultato: await esegui(ia), modello: ia.modello, cambiato: false, motivo: '' };
-  }
-  catch (e) {
-    if (e.status !== 404 && !e.quotaModello) throw e;
-    if (e.quotaModello) escludiModelloGemini(ia.chiave, ia.modello);
-    const nuovo = scegliModelloGemini(await elencaModelliGemini(ia.chiave), [ia.modello, ...esclusiGemini(ia.chiave)]);
-    if (!nuovo) {
-      if (e.quotaModello) throw senzaModelliGemini(e);
-      throw new Error('nessun modello Gemini utilizzabile con questa chiave (controlla che sia abilitata in Google AI Studio)');
-    }
-    try { return { risultato: await esegui({ ...ia, modello: nuovo }), modello: nuovo, cambiato: true, motivo: e.quotaModello ? 'quota' : 'ritirato' }; }
-    catch (e2) {
-      if (!e2.quotaModello) throw e2;
-      escludiModelloGemini(ia.chiave, nuovo);
-      throw senzaModelliGemini(e2);
-    }
-  }
-}
-function senzaModelliGemini(e) {
-  const motivo = 'nessun modello Gemini con quota gratuita disponibile oggi per questa chiave';
-  const fino = mettiInPausaGemini({ tipo: 'giorno' }, motivo + ' (' + e.message + ')');
-  const err = new Error(motivo + ' (' + e.message + ') — nessuna nuova richiesta fino alle ' + oraBreve(fino));
-  err.pausa = true;
-  return err;
-}
-
-async function analizzaConGemini(pagine, timeoutMs = 25000) {
-  const ia = configIA();
-  const imgs = [];
-  for (const p of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(p));
-  const corpo = costruisciRichiestaGemini(imgs, CATEGORIE_ALIMENTARI);
-  // Solo un modello ritirato o senza quota giustifica una seconda richiesta. Lento o sovraccarico:
-  // provare altri modelli consuma la quota senza risolvere, si passa al servizio successivo.
-  const r = await conSostitutoGemini(ia, x => chiamaGemini(corpo, x, timeoutMs));
-  if (r.cambiato) {
-    salvaConfigIA({ ...configIA(), modello: r.modello });
-    toast(r.motivo === 'quota'
-      ? 'Il modello Gemini "' + ia.modello + '" oggi non ha quota gratuita: passato a "' + r.modello + '".'
-      : 'Modello Gemini "' + ia.modello + '" ritirato da Google: passato automaticamente a "' + r.modello + '".', 'info', 6000);
-  }
-  return { lettura: normalizzaRispostaGemini(r.risultato, CATEGORIE_ALIMENTARI), foto: imgs[0] ? imgs[0].dataUrl : null, modello: r.modello };
-}
-
-/* ---------- OpenRouter: secondo servizio (modelli gratuiti ":free") ---------- */
-const OR_API = 'https://openrouter.ai/api/v1';
-const OR_PAUSA_KEY = 'tenuta-spese.ia-pausa-openrouter';   // pausa separata da Gemini (solo dispositivo)
-const openRouterPronto = () => { const c = configIA(); return c.orAttivo && c.orChiave.length > 10; };
-function pausaOpenRouter() {
-  let raw = null;
-  try { raw = localStorage.getItem(OR_PAUSA_KEY); } catch (_) { return null; }
-  const p = leggiPausaGemini(raw, Date.now());   // stesso formato {fino, motivo}
-  if (!p && raw !== null) togliPausaOpenRouter();
-  return p;
-}
-function togliPausaOpenRouter() { try { localStorage.removeItem(OR_PAUSA_KEY); } catch (_) {} }
-/** Dopo un 429: Retry-After se c'è, altrimenti 60 s; limite giornaliero → mezzanotte UTC (azzeramento OpenRouter). */
-function mettiInPausaOpenRouter(motivo, retryAfterSec, dettaglio) {
-  const ora = Date.now();
-  let fino = ora + 60000;
-  if (/per[\s-]?day|daily/i.test(String(dettaglio || ''))) { const d = new Date(ora); fino = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); }
-  else if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) fino = ora + Math.min(retryAfterSec, 86400) * 1000;
-  try { localStorage.setItem(OR_PAUSA_KEY, JSON.stringify({ fino, motivo })); } catch (_) {}
-  return fino;
-}
-
-async function richiestaOpenRouter(percorso, chiave, opzioni = {}, timeoutMs = 25000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(OR_API + percorso, {
-      method: opzioni.corpo ? 'POST' : 'GET',
-      cache: 'no-store',
-      headers: { 'Authorization': 'Bearer ' + chiave, 'X-Title': 'Tenuta Spese', ...(opzioni.corpo ? { 'Content-Type': 'application/json' } : {}) },   // chiave in header, mai nell'URL
-      body: opzioni.corpo ? JSON.stringify(opzioni.corpo) : undefined,
-      signal: ctrl.signal
-    });
-    let j = null;
-    try { j = await res.json(); } catch (_) {}
-    // OpenRouter può rispondere 200 con un errore del fornitore nel corpo.
-    const errCorpo = j && j.error ? j.error : null;
-    if (!res.ok || errCorpo) {
-      const status = !res.ok ? res.status : (Number(errCorpo.code) || 500);
-      const det = (errCorpo && (errCorpo.metadata?.raw || errCorpo.message)) || '';
-      let messaggio = messaggioErroreOpenRouter(status, String(det));
-      if (status === 429) messaggio += ' — nessuna nuova richiesta fino alle ' + oraBreve(mettiInPausaOpenRouter(messaggio, parseFloat(res.headers.get('Retry-After')), String(det)));
-      const err = new Error(messaggio);
-      err.status = status;
-      err.dettaglio = String(det);
-      throw err;
-    }
-    return j;
-  } catch (e) {
-    if (e.name === 'AbortError') { const err = new Error('OpenRouter non ha risposto entro ' + Math.round(timeoutMs / 1000) + ' secondi'); err.timeout = true; throw err; }
-    if (e instanceof TypeError) throw new Error('rete non raggiungibile');
-    throw e;
-  } finally { clearTimeout(t); }
-}
-const modelloOpenRouterRotto = e => e.status === 404 || /no endpoints/i.test(e.dettaglio || '');
-async function scegliModelloOpenRouterDaApi(chiave, escludi = []) {
-  const j = await richiestaOpenRouter('/models', chiave, {}, 20000);
-  const m = scegliModelloOpenRouter(j && j.data, escludi);
-  if (!m) throw new Error('nessun modello gratuito che legge immagini su OpenRouter in questo momento');
-  return m;
-}
-/**
- * Esegue `esegui(modello)`; senza modello configurato lo sceglie dall'elenco; se il modello non esiste più
- * o non legge immagini ne sceglie UN altro. -> {risultato, modello: {id, json}, cambiato}
- */
-async function conModelloOpenRouter(c, esegui) {
-  let m = c.orModello ? { id: c.orModello, json: c.orJson } : null;
-  let cambiato = false;
-  if (!m) { m = await scegliModelloOpenRouterDaApi(c.orChiave); cambiato = true; }
-  try { return { risultato: await esegui(m), modello: m, cambiato }; }
-  catch (e) {
-    if (!modelloOpenRouterRotto(e)) throw e;
-    const nuovo = await scegliModelloOpenRouterDaApi(c.orChiave, [m.id]);
-    return { risultato: await esegui(nuovo), modello: nuovo, cambiato: true };
-  }
-}
-async function analizzaConOpenRouter(pagine, timeoutMs = 25000) {
-  const c = configIA();
-  const p = pausaOpenRouter();
-  if (p) { const err = new Error('OpenRouter in pausa fino alle ' + oraBreve(p.fino) + ': ' + p.motivo); err.pausa = true; throw err; }
-  const imgs = [];
-  for (const pg of pagine.slice(0, 5)) imgs.push(await ridimensionaJpeg(pg));
-  const r = await conModelloOpenRouter(c, m => richiestaOpenRouter('/chat/completions', c.orChiave,
-    { corpo: costruisciRichiestaOpenRouter(imgs, CATEGORIE_ALIMENTARI, m.id, m.json) }, timeoutMs));
-  if (r.cambiato) {
-    salvaConfigIA({ ...configIA(), orModello: r.modello.id, orJson: r.modello.json });
-    if (c.orModello) toast('Modello OpenRouter "' + c.orModello + '" non disponibile: passato a "' + r.modello.id + '".', 'info', 6000);
-  }
-  const testo = testoRispostaOpenRouter(r.risultato);
-  if (!testo) throw new Error('risposta vuota da OpenRouter');
-  return { lettura: normalizzaRispostaIA(testo, CATEGORIE_ALIMENTARI, 'OpenRouter'), foto: imgs[0] ? imgs[0].dataUrl : null, modello: r.modello.id };
 }
 
 /** OCR locale (Tesseract) su tutte le pagine; restituisce {testo, parsed}. */
@@ -5944,28 +5711,22 @@ function renderImpostazioni() {
 }
 
 /* ---------- Impostazioni IA e casi di prova ---------- */
+let groqSenzaModello = false;   // l'ultima Prova non ha trovato modelli che leggono immagini (solo sessione)
 async function renderIA() {
-  const c = configIA();
-  document.getElementById('ia-attivo').checked = c.attivo;
-  document.getElementById('ia-chiave').value = c.chiave;
-  document.getElementById('ia-modello').value = c.modello;
+  const c = configGroq();
+  document.getElementById('groq-attivo').checked = c.attivo;
+  document.getElementById('groq-chiave').value = c.chiave;
   document.getElementById('ia-foto').checked = c.salvaFoto;
-  document.getElementById('or-attivo').checked = c.orAttivo;
-  document.getElementById('or-chiave').value = c.orChiave;
-  document.getElementById('or-modello').value = c.orModello;
-  const badge = (attivo, chiave, pausa, modello) => !attivo ? 'non attivo' : chiave.length <= 10 ? 'manca la chiave'
-    : pausa ? 'in pausa fino alle ' + oraBreve(pausa.fino) : 'attivo' + (modello ? ' · ' + modello : '');
-  document.getElementById('ia-gem-stato').textContent = '● ' + badge(c.attivo, c.chiave, pausaGemini(), c.modello);
-  document.getElementById('or-badge').textContent = '● ' + badge(c.orAttivo, c.orChiave, pausaOpenRouter(), c.orModello || 'scelta automatica');
-  const st = document.getElementById('ia-stato');
+  const pausa = c.attivo ? pausaGroq() : null;
+  const badge = !c.attivo ? 'non attivo' : c.chiave.length <= 10 ? 'manca la chiave' : c.chiaveNonValida ? 'chiave non valida'
+    : pausa ? 'in pausa fino alle ' + oraBreve(pausa.fino) : groqSenzaModello ? 'nessun modello' : 'pronto';
+  document.getElementById('groq-badge').textContent = '● ' + badge;
+  document.getElementById('groq-modello').textContent = c.modello ? 'Modello in uso: ' + c.modello + ' (scelto automaticamente)' : '';
+  const st = document.getElementById('groq-stato');
   st.style.color = 'var(--text-muted)';
-  const pg = c.attivo ? pausaGemini() : null;
-  st.textContent = pg ? 'Motivo della pausa: ' + pg.motivo : '';
-  const so = document.getElementById('or-stato');
-  so.style.color = 'var(--text-muted)';
-  const po = c.orAttivo ? pausaOpenRouter() : null;
-  so.textContent = po ? 'Motivo della pausa: ' + po.motivo : '';
-  if (!(c.attivo && c.chiave.length > 10) && !(c.orAttivo && c.orChiave.length > 10)) st.textContent = 'Nessun servizio IA attivo: si usa solo l\'OCR del telefono.';
+  st.textContent = !c.attivo || c.chiave.length <= 10 ? 'Groq non attivo: si usa solo l\'OCR del telefono.'
+    : c.chiaveNonValida ? 'Groq ha rifiutato la chiave: creane una nuova su console.groq.com/keys e salvala.'
+    : pausa ? 'Motivo della pausa: ' + pausa.motivo : '';
   const info = document.getElementById('ia-casi-info');
   if (!Archivio.ok) { info.textContent = 'Archivio non disponibile su questo browser: i casi di prova non possono essere salvati.'; return; }
   try {
@@ -5976,127 +5737,45 @@ async function renderIA() {
       : 'Nessun caso ancora: si accumulano salvando scontrini.';
   } catch (e) { info.textContent = 'Lettura casi non riuscita: ' + e.message; }
 }
-document.getElementById('btn-ia-salva').addEventListener('click', () => {
-  const prima = configIA();
-  const chiave = document.getElementById('ia-chiave').value.trim();
-  const modello = document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT;
-  if (chiave !== prima.chiave || modello !== prima.modello) togliPausaGemini();   // chiave o modello nuovi: la pausa non vale più
-  const orChiave = document.getElementById('or-chiave').value.trim();
-  const orModello = document.getElementById('or-modello').value.trim();
-  if (orChiave !== prima.orChiave || orModello !== prima.orModello) togliPausaOpenRouter();
-  const ok = salvaConfigIA({
-    attivo: document.getElementById('ia-attivo').checked,
-    chiave,
-    modello,
-    salvaFoto: document.getElementById('ia-foto').checked,
-    orAttivo: document.getElementById('or-attivo').checked,
-    orChiave,
-    orModello,
-    orJson: orModello && orModello === prima.orModello ? prima.orJson : false
-  });
-  toast(ok ? 'Impostazioni IA salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
+const campiGroq = () => ({
+  attivo: document.getElementById('groq-attivo').checked,
+  chiave: document.getElementById('groq-chiave').value,
+  salvaFoto: document.getElementById('ia-foto').checked
+});
+document.getElementById('btn-groq-salva').addEventListener('click', () => {
+  const prima = configGroq();
+  const nuova = aggiornaConfigGroq(prima, campiGroq());
+  if (nuova.chiave !== prima.chiave) { togliPausaGroq(); groqSenzaModello = false; }   // chiave nuova: la pausa non vale più
+  const ok = salvaConfigGroq(nuova);
+  toast(ok ? 'Impostazioni Groq salvate su questo dispositivo.' : 'Salvataggio non riuscito.', ok ? 'success' : 'danger');
   renderIA();
 });
-function mostraStatoIA(testo, colore) { const st = document.getElementById('ia-stato'); st.style.color = colore; st.textContent = testo; }
-function iaDaCampi() {
-  return { ...configIA(), chiave: document.getElementById('ia-chiave').value.trim(), modello: document.getElementById('ia-modello').value.trim() || IA_MODELLO_DEFAULT };
-}
-const tempoRisposta = ms => ms == null ? '' : ' · risposta in ' + (ms / 1000).toFixed(1).replace('.', ',') + ' s';
-
-/** La richiesta di prova riesce se Google risponde 200: anche un testo vuoto (modelli che "ragionano") prova che chiave e modello funzionano. */
-async function provaGemini(ia, timeoutMs = 45000) {
-  try { await chiamaGemini(PROVA_GEMINI, ia, timeoutMs); }
-  catch (e) { if (!e.rispostaVuota || /bloccata/.test(e.message)) throw e; }
-}
-const PROVA_GEMINI = { contents: [{ role: 'user', parts: [{ text: 'Rispondi solo con la parola: ok' }] }], generationConfig: { maxOutputTokens: 1024 } };
-
-document.getElementById('btn-ia-test').addEventListener('click', async () => {
-  let ia = iaDaCampi();
-  const originale = ia.modello;
-  if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
-  const pausa = pausaGemini();
-  const salvata = configIA();
-  if (pausa && (ia.chiave !== salvata.chiave || ia.modello !== salvata.modello)) togliPausaGemini();   // la pausa riguarda chiave e modello salvati
-  else if (pausa) { mostraStatoIA('Gemini è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata: per riprovare subito incolla un\'altra chiave o scegli un altro modello.', 'var(--warning)'); return; }
-  mostraStatoIA('Provo la connessione…', 'var(--text-muted)');
+function mostraStatoGroq(testo, colore) { const st = document.getElementById('groq-stato'); st.style.color = colore; st.textContent = testo; }
+document.getElementById('btn-groq-prova').addEventListener('click', async () => {
+  const salvata = configGroq();
+  const chiave = aggiornaConfigGroq(salvata, campiGroq()).chiave;
+  if (chiave.length <= 10) { mostraStatoGroq('Inserisci prima la chiave API di Groq.', 'var(--danger)'); return; }
+  const pausa = pausaGroq();
+  if (pausa && chiave === salvata.chiave) { mostraStatoGroq('Groq è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata.', 'var(--warning)'); return; }
+  const btn = document.getElementById('btn-groq-prova');
+  btn.disabled = true;
   try {
-    let ms = null;
-    const r = await conSostitutoGemini(ia, async x => {
-      if (x.modello !== originale) mostraStatoIA('Il modello "' + originale + '" non è utilizzabile: provo "' + x.modello + '"…', 'var(--text-muted)');
-      const t0 = Date.now();
-      try { await provaGemini(x); }
-      catch (e) {
-        // Provare altri modelli in raffica consuma la quota senza risolvere: si riprova più tardi.
-        if (e.timeout || e.status >= 500) throw new Error('Gemini ora è lento o sovraccarico (' + e.message + '): riprova tra qualche minuto');
-        throw e;
-      }
-      ms = Date.now() - t0;
-    });
-    ia = { ...ia, modello: r.modello };
-    document.getElementById('ia-modello').value = ia.modello;
-    if (r.cambiato) salvaConfigIA(ia);
-    const esclusi = esclusiGemini(ia.chiave);
-    const notaEsclusi = esclusi.length ? ' Senza quota fino a mezzanotte (ora USA): ' + esclusi.join(', ') + '.' : '';
-    mostraStatoIA((r.cambiato
-      ? 'Il modello "' + originale + '" ' + (r.motivo === 'quota' ? 'oggi non ha quota gratuita' : 'è stato ritirato da Google') + ': passato automaticamente a "' + ia.modello + '" (salvato' + tempoRisposta(ms) + ').'
-      : 'Connessione riuscita con il modello "' + ia.modello + '"' + tempoRisposta(ms) + '.') + notaEsclusi, 'var(--success)');
-  } catch (e) { mostraStatoIA('Non funziona con il modello "' + ia.modello + '": ' + e.message + '.', 'var(--danger)'); }
-});
-document.getElementById('btn-ia-modelli').addEventListener('click', async () => {
-  const ia = iaDaCampi();
-  if (ia.chiave.length < 10) { mostraStatoIA('Inserisci prima la chiave API.', 'var(--danger)'); return; }
-  mostraStatoIA('Chiedo a Google i modelli disponibili…', 'var(--text-muted)');
-  try {
-    const elenco = await elencaModelliGemini(ia.chiave);
-    const nomi = elenco.filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini-/.test(m.name || '')).map(m => m.name.replace(/^models\//, ''));
-    document.getElementById('ia-modelli').innerHTML = nomi.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
-    const scelto = scegliModelloGemini(elenco, esclusiGemini(ia.chiave));
-    if (!scelto) { mostraStatoIA('Nessun modello Gemini utilizzabile con questa chiave.', 'var(--danger)'); return; }
-    document.getElementById('ia-modello').value = scelto;
-    mostraStatoIA(nomi.length + ' modelli disponibili. Ho scelto "' + scelto + '": premi Prova la connessione e poi Salva.', 'var(--success)');
-  } catch (e) { mostraStatoIA('Non riesco a leggere i modelli: ' + e.message + '.', 'var(--danger)'); }
-});
-
-function mostraStatoOR(testo, colore) { const st = document.getElementById('or-stato'); st.style.color = colore; st.textContent = testo; }
-function orDaCampi() {
-  const c = configIA();
-  const orModello = document.getElementById('or-modello').value.trim();
-  return { ...c, orChiave: document.getElementById('or-chiave').value.trim(), orModello, orJson: orModello === c.orModello ? c.orJson : false };
-}
-document.getElementById('btn-or-test').addEventListener('click', async () => {
-  const c = orDaCampi();
-  if (c.orChiave.length < 10) { mostraStatoOR('Inserisci prima la chiave API di OpenRouter.', 'var(--danger)'); return; }
-  const salvata = configIA();
-  const pausa = pausaOpenRouter();
-  if (pausa && c.orChiave === salvata.orChiave && c.orModello === salvata.orModello) { mostraStatoOR('OpenRouter è in pausa fino alle ' + oraBreve(pausa.fino) + ': ' + pausa.motivo + '. Nessuna richiesta inviata.', 'var(--warning)'); return; }
-  if (pausa) togliPausaOpenRouter();
-  mostraStatoOR('Provo la connessione…', 'var(--text-muted)');
-  try {
-    let ms = null;
-    const r = await conModelloOpenRouter(c, async m => {
-      const t0 = Date.now();
-      await richiestaOpenRouter('/chat/completions', c.orChiave, { corpo: { model: m.id, max_tokens: 16, messages: [{ role: 'user', content: 'Rispondi solo con la parola: ok' }] } }, 45000);
-      ms = Date.now() - t0;
-    });
-    document.getElementById('or-modello').value = r.modello.id;
-    if (r.cambiato) salvaConfigIA({ ...configIA(), orChiave: c.orChiave, orModello: r.modello.id, orJson: r.modello.json });
-    mostraStatoOR('Connessione riuscita con "' + r.modello.id + '"' + (r.cambiato ? ' (scelto automaticamente e salvato)' : '') + tempoRisposta(ms) + '.', 'var(--success)');
-  } catch (e) { mostraStatoOR('Non funziona' + (c.orModello ? ' con "' + c.orModello + '"' : '') + ': ' + e.message + '.', 'var(--danger)'); }
-});
-document.getElementById('btn-or-modelli').addEventListener('click', async () => {
-  const c = orDaCampi();
-  if (c.orChiave.length < 10) { mostraStatoOR('Inserisci prima la chiave API di OpenRouter.', 'var(--danger)'); return; }
-  mostraStatoOR('Chiedo a OpenRouter i modelli gratuiti…', 'var(--text-muted)');
-  try {
-    const j = await richiestaOpenRouter('/models', c.orChiave, {}, 20000);
-    const ids = [];
-    let m, escl = [];
-    while ((m = scegliModelloOpenRouter(j && j.data, escl))) { ids.push(m.id); escl.push(m.id); }
-    document.getElementById('or-modelli').innerHTML = ids.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
-    if (!ids.length) { mostraStatoOR('Nessun modello gratuito che legge immagini su OpenRouter in questo momento.', 'var(--danger)'); return; }
-    document.getElementById('or-modello').value = ids[0];
-    mostraStatoOR(ids.length + ' modelli gratuiti con lettura immagini. Ho scelto "' + ids[0] + '": premi Prova la connessione e poi Salva.', 'var(--success)');
-  } catch (e) { mostraStatoOR('Non riesco a leggere i modelli: ' + e.message + '.', 'var(--danger)'); }
+    mostraStatoGroq('Cerco il modello…', 'var(--text-muted)');
+    const modello = await modelloGroq(chiave);
+    groqSenzaModello = !modello;
+    if (!modello) { mostraStatoGroq('Nessun modello Groq che legge immagini è disponibile per questa chiave.', 'var(--danger)'); return; }
+    mostraStatoGroq('Provo il modello «' + modello + '»…', 'var(--text-muted)');
+    const t0 = Date.now();
+    await richiestaGroq('/chat/completions', chiave, { model: modello, max_tokens: 8, messages: [{ role: 'user', content: 'Rispondi solo: ok' }] }, 20000);
+    const s = ((Date.now() - t0) / 1000).toFixed(1).replace('.', ',');
+    const c = configGroq();
+    if (c.chiave === chiave && c.chiaveNonValida) salvaConfigGroq({ ...c, chiaveNonValida: false });
+    renderIA();
+    mostraStatoGroq('Funziona: modello «' + modello + '», risposta in ' + s + ' s.' + (chiave !== c.chiave ? ' Premi Salva per usare questa chiave.' : ''), 'var(--success)');
+  } catch (e) {
+    renderIA();
+    mostraStatoGroq('Non funziona: ' + e.message + '.', 'var(--danger)');
+  } finally { btn.disabled = false; }
 });
 
 document.getElementById('btn-casi-export').addEventListener('click', async () => {
