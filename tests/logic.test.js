@@ -609,3 +609,70 @@ test('erroreRagionamentoGemini: solo un 400 che cita il thinking', () => {
   assert.equal(L.erroreRagionamentoGemini(400, undefined), false);
 });
 
+
+/* ---------- Groq ---------- */
+const conf = o => JSON.stringify(o);
+test('costruisciRichiestaGroq: modello, json, prompt e immagini come data URL', () => {
+  const c = L.costruisciRichiestaGroq([{ mime: 'image/jpeg', base64: 'QUJD' }, { mime: 'image/png', base64: 'REVG' }], ['Frutta', 'Altro'], 'm1');
+  assert.equal(c.model, 'm1'); assert.equal(c.temperature, 0);
+  assert.deepEqual(c.response_format, { type: 'json_object' });
+  const p = c.messages[0].content;
+  assert.equal(p[0].type, 'text'); assert.match(p[0].text, /Frutta, Altro/);
+  assert.deepEqual(p.slice(1).map(x => x.image_url.url), ['data:image/jpeg;base64,QUJD', 'data:image/png;base64,REVG']);
+});
+test('testoRispostaGroq: stringa, array di parti, vuoto', () => {
+  assert.equal(L.testoRispostaGroq({ choices: [{ message: { content: '{"a":1}' } }] }), '{"a":1}');
+  assert.equal(L.testoRispostaGroq({ choices: [{ message: { content: [{ text: 'a' }, { text: 'b' }] } }] }), 'ab');
+  assert.equal(L.testoRispostaGroq({}), ''); assert.equal(L.testoRispostaGroq(null), '');
+});
+test('scegliModelloGroq: solo modelli che leggono immagini e attivi, preferenze, esclusioni, null', () => {
+  const el = [
+    { id: 'llama-3.3-70b-versatile', active: true },
+    { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', active: true },
+    { id: 'meta-llama/llama-4-scout-17b-16e-instruct', active: true },
+    { id: 'qualcosa-vision-preview', active: false },
+    { id: 'whisper-large-v3', active: true }
+  ];
+  assert.equal(L.scegliModelloGroq(el), 'meta-llama/llama-4-scout-17b-16e-instruct');
+  assert.equal(L.scegliModelloGroq(el, ['meta-llama/llama-4-scout-17b-16e-instruct']), 'meta-llama/llama-4-maverick-17b-128e-instruct');
+  assert.equal(L.scegliModelloGroq([{ id: 'nuovo-x', input_modalities: ['text', 'image'] }]), 'nuovo-x');   // campo esplicito vince sul nome
+  assert.equal(L.scegliModelloGroq([{ id: 'llama-3.3-70b-versatile' }, { id: 'whisper-large-v3' }]), null);
+  assert.equal(L.scegliModelloGroq(null), null);
+});
+test('durataGroqMs: formati di Groq e valori non validi', () => {
+  assert.equal(L.durataGroqMs('2m59.56s'), 179560); assert.equal(L.durataGroqMs('7.66s'), 7660);
+  assert.equal(L.durataGroqMs('1h2m3s'), 3723000); assert.equal(L.durataGroqMs('250ms'), 250);
+  assert.equal(L.durataGroqMs('30'), 30000); assert.equal(L.durataGroqMs(''), null); assert.equal(L.durataGroqMs('boh'), null);
+});
+test('classificaErroreGroq: chiave, modello, limite con e senza header, temporaneo, mai la chiave', () => {
+  const t0 = 1_000_000;
+  const k = L.classificaErroreGroq(401, { error: { message: 'Invalid API Key gsk_SEGRETA' } }, {}, t0);
+  assert.equal(k.tipo, 'chiave'); assert.equal(k.pausaFino, null); assert.doesNotMatch(k.messaggio, /gsk_/);
+  assert.equal(L.classificaErroreGroq(403, {}, {}, t0).tipo, 'chiave');
+  assert.equal(L.classificaErroreGroq(404, { error: { code: 'model_not_found' } }, {}, t0).tipo, 'modello');
+  assert.equal(L.classificaErroreGroq(400, { error: { code: 'model_decommissioned' } }, {}, t0).tipo, 'modello');
+  assert.equal(L.classificaErroreGroq(429, {}, { 'retry-after': '12' }, t0).pausaFino, t0 + 12000);
+  assert.equal(L.classificaErroreGroq(429, {}, { 'x-ratelimit-reset-requests': '2m59.56s' }, t0).pausaFino, t0 + 179560);
+  const l = L.classificaErroreGroq(429, {}, {}, t0);
+  assert.equal(l.tipo, 'limite'); assert.equal(l.pausaFino, t0 + 60000);
+  assert.equal(L.classificaErroreGroq(503, {}, {}, t0).tipo, 'temporaneo');
+  assert.equal(L.classificaErroreGroq(400, { error: { message: 'too many images' } }, {}, t0).tipo, 'richiesta');
+});
+test('leggiConfigGroq / aggiornaConfigGroq / configDaVecchiaIA: default, pulizia chiave, reset su chiave nuova', () => {
+  const vuota = { attivo: false, chiave: '', modello: '', chiaveNonValida: false, salvaFoto: false };
+  assert.deepEqual(L.leggiConfigGroq(null), vuota);
+  assert.deepEqual(L.leggiConfigGroq('{rotto'), vuota);
+  assert.deepEqual(L.leggiConfigGroq('[1]'), vuota);
+  const prima = { attivo: true, chiave: 'gsk_A', modello: 'm1', chiaveNonValida: true, salvaFoto: false };
+  const nuova = L.aggiornaConfigGroq(prima, { attivo: true, chiave: '  gsk_B\n', salvaFoto: true });
+  assert.deepEqual(nuova, { attivo: true, chiave: 'gsk_B', modello: '', chiaveNonValida: false, salvaFoto: true });
+  assert.deepEqual(L.aggiornaConfigGroq(prima, { attivo: false, chiave: 'gsk_A', salvaFoto: false }), { ...prima, attivo: false });
+  assert.deepEqual(L.configDaVecchiaIA(conf({ attivo: true, chiave: 'AIza', salvaFoto: true, orChiave: 'sk-or' })), { ...vuota, salvaFoto: true });
+  assert.deepEqual(L.configDaVecchiaIA('{rotto'), vuota);
+});
+test('leggiPausaGroq: valida, scaduta, rovinata', () => {
+  assert.deepEqual(L.leggiPausaGroq(conf({ fino: 2000, motivo: 'limite' }), 1000), { fino: 2000, motivo: 'limite' });
+  assert.equal(L.leggiPausaGroq(conf({ fino: 500, motivo: 'x' }), 1000), null);
+  assert.equal(L.leggiPausaGroq('{rotto', 1000), null);
+  assert.equal(L.leggiPausaGroq(null, 1000), null);
+});

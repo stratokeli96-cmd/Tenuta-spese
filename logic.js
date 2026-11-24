@@ -550,7 +550,7 @@ function indovinaVoce(desc, st) {
    ============================================================ */
 const CATEGORIA_FALLBACK = 'Altro';
 
-/** Istruzioni comuni (Gemini, OpenRouter) per leggere uno scontrino. */
+/** Istruzioni per leggere uno scontrino. */
 function promptScontrino(categorie) {
   return [
     'Sei un lettore esperto di scontrini fiscali italiani. Leggi l\'immagine (o le immagini: sono pagine dello STESSO scontrino) e restituisci SOLO JSON.',
@@ -645,6 +645,93 @@ function controlloTotale(somma, totaleRiportato) {
   if (totaleRiportato === null || totaleRiportato === undefined || !Number.isFinite(t) || t <= 0) return { stato: 'mancante', delta: null };
   const delta = round2(Number(somma) - t);
   return { stato: Math.abs(delta) > 0.01 ? 'diverso' : 'ok', delta: delta === 0 ? 0 : delta };
+}
+
+/* ---------- Groq (API compatibile OpenAI, piano gratuito) ---------- */
+
+/** Corpo per POST /openai/v1/chat/completions: prompt + immagini come data URL, risposta JSON. */
+function costruisciRichiestaGroq(immagini, categorie, modello) {
+  return {
+    model: _str(modello),
+    temperature: 0,
+    response_format: { type: 'json_object' },
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: promptScontrino(categorie) },
+      ...(immagini || []).map(i => ({ type: 'image_url', image_url: { url: 'data:' + i.mime + ';base64,' + i.base64 } }))
+    ] }]
+  };
+}
+/** Testo della risposta di chat/completions (stringa o array di parti). */
+function testoRispostaGroq(j) {
+  const c = j && j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : '';
+  if (typeof c === 'string') return c;
+  return Array.isArray(c) ? c.map(p => (p && typeof p.text === 'string' ? p.text : '')).join('') : '';
+}
+/** Il modello dichiara di accettare immagini? (campo esplicito, se Groq lo fornisce) */
+function _immaginiEsplicite(m) {
+  const liste = [m.input_modalities, m.modalities, m.architecture && m.architecture.input_modalities];
+  return liste.some(l => Array.isArray(l) && l.includes('image'));
+}
+const _RE_VISION_GROQ = /llama-4-scout|llama-4-maverick|vision|(^|[-/])vl([-/.]|$)|qwen.*vl/i;
+const _PREFERENZE_GROQ = [/llama-4-scout/i, /llama-4-maverick/i];
+/** Sceglie dall'elenco di GET /models un modello attivo che legge immagini; null se non ce n'è. */
+function scegliModelloGroq(elenco, escludi = []) {
+  if (!Array.isArray(elenco)) return null;
+  const ok = elenco.filter(m => m && typeof m === 'object' && typeof m.id === 'string' && m.id
+    && m.active !== false && !escludi.includes(m.id) && (_immaginiEsplicite(m) || _RE_VISION_GROQ.test(m.id)));
+  const rango = m => _immaginiEsplicite(m) ? -1 : (i => i < 0 ? _PREFERENZE_GROQ.length : i)(_PREFERENZE_GROQ.findIndex(r => r.test(m.id)));
+  ok.sort((a, b) => rango(a) - rango(b) || a.id.localeCompare(b.id));
+  return ok.length ? ok[0].id : null;
+}
+/** Durata nel formato degli header di Groq ("2m59.56s", "7.66s", "250ms", "1h2m3s"; numero puro = secondi) -> ms. */
+function durataGroqMs(s) {
+  const t = _str(s).trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return Math.round(parseFloat(t) * 1000);
+  const m = t.match(/^(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/);
+  if (!t || !m || !(m[1] || m[2] || m[3] || m[4])) return null;
+  return Math.round((+m[1] || 0) * 3600000 + (+m[2] || 0) * 60000 + (+m[3] || 0) * 1000 + (+m[4] || 0));
+}
+const LINK_CHIAVI_GROQ = 'console.groq.com/keys';
+/** Risposta HTTP non ok di Groq -> {tipo, pausaFino, messaggio}. `headers`: oggetto con chiavi minuscole. Mai la chiave nei messaggi. */
+function classificaErroreGroq(status, corpo, headers, adessoMs) {
+  const e = corpo && typeof corpo === 'object' && corpo.error && typeof corpo.error === 'object' ? corpo.error : {};
+  const code = _str(e.code), det = _str(e.message).replace(/gsk_[A-Za-z0-9]+/g, '…').slice(0, 120);
+  const h = headers || {};
+  if (status === 401 || status === 403) return { tipo: 'chiave', pausaFino: null, messaggio: 'Chiave Groq non valida o revocata: creane una nuova su ' + LINK_CHIAVI_GROQ };
+  if (status === 404 || code === 'model_not_found' || code === 'model_decommissioned') return { tipo: 'modello', pausaFino: null, messaggio: 'Modello Groq non più disponibile' };
+  if (status === 429) {
+    const ms = [h['retry-after'], h['x-ratelimit-reset-requests'], h['x-ratelimit-reset-tokens']].map(durataGroqMs).find(x => x !== null && x > 0);
+    return { tipo: 'limite', pausaFino: adessoMs + (ms || 60000), messaggio: 'Limite gratuito di Groq raggiunto' + (det ? ' (' + det + ')' : '') };
+  }
+  if (status >= 500) return { tipo: 'temporaneo', pausaFino: null, messaggio: 'Groq ha un problema temporaneo (' + status + ')' };
+  return { tipo: 'richiesta', pausaFino: null, messaggio: 'Groq ha rifiutato la richiesta (' + status + ')' + (det ? ': ' + det : '') };
+}
+function _oggettoJson(raw) {
+  try { const o = JSON.parse(raw); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (_) { return null; }
+}
+/** Configurazione Groq salvata (localStorage) -> sempre valida, mai eccezioni. */
+function leggiConfigGroq(raw) {
+  const o = (typeof raw === 'string' && _oggettoJson(raw)) || {};
+  return { attivo: o.attivo === true, chiave: _str(o.chiave).replace(/\s+/g, ''), modello: _str(o.modello).trim(),
+    chiaveNonValida: o.chiaveNonValida === true, salvaFoto: o.salvaFoto === true };
+}
+/** Nuova configurazione dai campi delle Impostazioni: chiave ripulita; chiave diversa -> modello e "non valida" azzerati. */
+function aggiornaConfigGroq(prima, campi) {
+  const p = leggiConfigGroq(JSON.stringify(prima || {}));
+  const chiave = _str(campi && campi.chiave).replace(/\s+/g, '');
+  const nuova = chiave !== p.chiave;
+  return { attivo: !!(campi && campi.attivo), chiave, modello: nuova ? '' : p.modello, chiaveNonValida: nuova ? false : p.chiaveNonValida, salvaFoto: !!(campi && campi.salvaFoto) };
+}
+/** Pausa salvata {fino, motivo} ancora valida, altrimenti null. */
+function leggiPausaGroq(raw, adessoMs) {
+  const o = typeof raw === 'string' ? _oggettoJson(raw) : null;
+  if (!o || !Number.isFinite(o.fino) || o.fino <= adessoMs) return null;
+  return { fino: o.fino, motivo: _str(o.motivo) };
+}
+/** Dalla vecchia configurazione IA si porta solo `salvaFoto`; le chiavi dei vecchi servizi si buttano. */
+function configDaVecchiaIA(rawVecchio) {
+  const o = (typeof rawVecchio === 'string' && _oggettoJson(rawVecchio)) || {};
+  return { ...leggiConfigGroq(null), salvaFoto: o.salvaFoto === true };
 }
 
 /* ---------- OpenRouter (API compatibile OpenAI, modelli ":free") ---------- */
@@ -950,6 +1037,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validaStato, importaStato, rilevaVecchioSchema, migraDaVecchioSchema,
     meseLeggero, separaArchivio, ricomponiArchivio, confrontaMesi,
     parseCSV, parseImportoBanca, parseDataBanca, normTesto, rilevaColonne, estraiMovimentiBanca, trovaDoppione, chiaveRegola, indovinaVoce,
+    costruisciRichiestaGroq, testoRispostaGroq, scegliModelloGroq, durataGroqMs, classificaErroreGroq, leggiConfigGroq, aggiornaConfigGroq, leggiPausaGroq, configDaVecchiaIA,
     costruisciRichiestaGemini, normalizzaRispostaGemini, promptScontrino, normalizzaRispostaIA, controlloTotale, sommaAttesaLettura, costruisciRichiestaOpenRouter, testoRispostaOpenRouter, scegliModelloOpenRouter, messaggioErroreOpenRouter, messaggioErroreGemini, conRagionamentoRidotto, erroreRagionamentoGemini, scegliModelloGemini, leggiLimiteGemini, improntaChiave, quotaModelloFinita, leggiEsclusiGemini, aggiungiEsclusoGemini, prossimaMezzanotteLosAngeles, finePausaGemini, leggiPausaGemini, confrontaLetture, statisticheOcr, nomeProdottoPulito, aggregaProdotti,
     totaleEntrateExtra, redditoTotale, redditoMese, extraAssegnata, extraDaAssegnare, calcolaAllocazione,
     stIsVoceValida, stIsOrfano, stSpesoMacro, stSpesoVoce, totaleScontrini
