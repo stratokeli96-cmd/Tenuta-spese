@@ -1,0 +1,5 @@
+{
+  "name": "tenuta-spese",
+  "private": true,
+  "scripts": { "test": "node --test" }
+}
