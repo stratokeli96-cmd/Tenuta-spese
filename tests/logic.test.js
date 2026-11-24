@@ -676,3 +676,10 @@ test('leggiPausaGroq: valida, scaduta, rovinata', () => {
   assert.equal(L.leggiPausaGroq('{rotto', 1000), null);
   assert.equal(L.leggiPausaGroq(null, 1000), null);
 });
+test('scansione: niente più gara a tempo né catena di servizi', () => {
+  assert.doesNotMatch(html, /ATTESA_IA_DOPO_OCR_MS|catenaIA|aggiornaConfrontoIA|ocr-confronto/);
+});
+test('Groq: chiave solo nell\'header Authorization, mai nell\'URL', () => {
+  assert.match(html, /Authorization['"]?\s*:\s*['"]Bearer ['"]\s*\+/);
+  assert.doesNotMatch(html, /api\.groq\.com[^'"`]*[?&](key|api_key)=/i);
+});

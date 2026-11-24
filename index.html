@@ -1552,7 +1552,6 @@ table.data tbody tr { transition: background var(--t-fast); }
           </div>
 
           <!-- Esito dei checkpoint di validazione: errori bloccanti e avvisi. -->
-          <div id="ocr-confronto"></div>
         <div id="ocr-alerts"></div>
 
           <!-- Fallback: testo grezzo riconosciuto, per inserimento manuale
@@ -3621,45 +3620,38 @@ async function ocrLocale(pagine) {
   return { testo, parsed: parseScontrino(testo) };
 }
 
-/* Lettura in corso: tiene insieme OCR locale, Gemini e (al salvataggio) la correzione finale. */
+/* Lettura in corso: tiene insieme la lettura (OCR locale o Groq) e, al salvataggio, la correzione finale. */
 let ultimaLettura = null;
-const ATTESA_IA_DOPO_OCR_MS = 6000;   // quanto si aspetta la catena IA dopo che l'OCR locale ha finito
-const NOMI_IA = { gemini: 'Gemini', openrouter: 'OpenRouter' };
+const MAX_PAGINE_GROQ = 5;   // Groq accetta poche immagini per richiesta: le pagine oltre si ignorano (con avviso)
 
-function aggiornaConfrontoIA() {
-  const L0 = ultimaLettura;
-  const box = document.getElementById('ocr-confronto');
-  if (!box || !L0 || !L0.ocr || !L0.ia) return;
-  const c = confrontaLetture(L0.ocr.righe, L0.ia.righe);
-  box.innerHTML = `<div class="alert info" style="margin-bottom:10px;">Confronto: l'OCR locale ha letto <strong>${c.righeUguali} righe su ${Math.max(c.righeLette, c.righeRif)}</strong> uguali a ${escapeHtml(NOMI_IA[L0.iaFonte] || 'IA')} (${Math.round(c.accuratezza * 100)}%). Il confronto finale, dopo la tua correzione, migliora le statistiche in Impostazioni.</div>`;
+/** Una lettura con Groq: una richiesta; se il modello è stato ritirato, un nuovo modello e UN solo nuovo tentativo. */
+async function analizzaConGroq(pagine) {
+  const c = configGroq();
+  const imgs = [];
+  for (const p of pagine.slice(0, MAX_PAGINE_GROQ)) imgs.push(await ridimensionaJpeg(p, 1600, 0.8));
+  let modello = c.modello || await modelloGroq(c.chiave);
+  if (!modello) throw new Error('nessun modello Groq che legge immagini');
+  const leggi = m => richiestaGroq('/chat/completions', c.chiave, costruisciRichiestaGroq(imgs, CATEGORIE_ALIMENTARI, m), 30000);
+  let j;
+  try { j = await leggi(modello); }
+  catch (e) {
+    if (!e.groq || e.groq.tipo !== 'modello') throw e;
+    modello = await modelloGroq(c.chiave, [modello]);
+    if (!modello) throw new Error('nessun modello Groq che legge immagini');
+    j = await leggi(modello);
+  }
+  const lettura = normalizzaRispostaIA(testoRispostaGroq(j), CATEGORIE_ALIMENTARI, 'Groq');
+  if (pagine.length > MAX_PAGINE_GROQ) lettura.avvisi.push('Groq ha letto solo le prime ' + MAX_PAGINE_GROQ + ' pagine su ' + pagine.length + ': controlla le righe mancanti.');
+  return { lettura, foto: c.salvaFoto && imgs[0] ? imgs[0].dataUrl : null, modello };
 }
 
-/**
- * Servizi IA uno alla volta, mai in parallelo: Gemini → OpenRouter. Si passa al successivo se il
- * precedente è in pausa, fallisce o non trova prodotti. Se `finestraChiusa()` (l'OCR ha già dato il
- * risultato) non si avvia il servizio successivo: sarebbe quota spesa per nulla.
- * -> {lettura, foto, modello, fonte: 'gemini'|'openrouter', motivi: string[]}; rifiuta con err.motivi.
- */
-async function catenaIA(pagine, finestraChiusa, onStato) {
-  const motivi = [];
-  const servizi = [];
-  if (geminiPronto()) servizi.push({ fonte: 'gemini', pausa: pausaGemini, esegui: analizzaConGemini });
-  if (openRouterPronto()) servizi.push({ fonte: 'openrouter', pausa: pausaOpenRouter, esegui: analizzaConOpenRouter });
-  for (const sv of servizi) {
-    const nome = NOMI_IA[sv.fonte];
-    const p = sv.pausa();
-    if (p) { motivi.push(nome + ' in pausa fino alle ' + oraBreve(p.fino) + ' (' + p.motivo + ')'); continue; }
-    if (finestraChiusa()) break;
-    onStato('Analisi con ' + nome + '…');
-    try {
-      const r = await sv.esegui(pagine);
-      if (r.lettura.errori.length) { motivi.push(r.lettura.errori[0]); continue; }
-      return { ...r, fonte: sv.fonte, motivi };
-    } catch (e) { motivi.push(nome + ' non disponibile (' + e.message + ')'); }
-  }
-  const err = new Error(motivi.join('; ') || 'nessun servizio IA attivo');
-  err.motivi = motivi;
-  throw err;
+/** Perché Groq non si usa per questa scansione ('' = si usa, oppure non è attivo e non serve avvisare). */
+function motivoGroqNonUsato() {
+  const c = configGroq();
+  if (!c.attivo || c.chiave.length <= 10) return '';
+  if (c.chiaveNonValida) return 'Chiave Groq non valida o revocata: creane una nuova su console.groq.com/keys';
+  const p = pausaGroq();
+  return p ? 'Groq in pausa fino alle ' + oraBreve(p.fino) + ' (' + p.motivo + ')' : '';
 }
 
 async function gestisciFileOCR(file) {
@@ -3667,21 +3659,11 @@ async function gestisciFileOCR(file) {
   ocrProgress.classList.add('active');
   ocrProgressFill.style.width = '0%';
   ocrStatus.textContent = 'Caricamento file…';
-  const confrontoBox = document.getElementById('ocr-confronto');
-  if (confrontoBox) confrontoBox.innerHTML = '';
 
   try {
     // HEIC/HEIF non sono decodificabili da <img>/canvas nei browser desktop.
     if (/\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type)) {
       throw new Error('Formato HEIC/HEIF non supportato dal browser. Esporta lo scontrino come JPG/PNG e ricarica.');
-    }
-    // Dopo un 429 non si chiede nulla al servizio in pausa; la pausa di uno non blocca l'altro.
-    const usaIA = (geminiPronto() && !pausaGemini()) || (openRouterPronto() && !pausaOpenRouter());
-    const haOcr = typeof Tesseract !== 'undefined';
-    if (!haOcr && !usaIA) {
-      throw new Error((geminiPronto() || openRouterPronto()
-        ? 'Servizi IA in pausa e OCR locale non caricato'
-        : 'Libreria OCR non caricata (offline?)') + ': inserisci i prodotti a mano.');
     }
 
     // Lo scanner documenti nativo di iOS consegna un PDF con UNA PAGINA PER SCATTO:
@@ -3694,57 +3676,34 @@ async function gestisciFileOCR(file) {
       pagine = [await fileToDataUrl(file)];
     }
 
-    const lettura = ultimaLettura = { ocr: null, ocrText: '', ia: null, iaFonte: null, iaModello: '', gemini: null, foto: null, ocrErrore: '', iaErrore: '' };
+    const lettura = ultimaLettura = { ocr: null, ocrText: '', ia: null, iaFonte: null, iaModello: '', foto: null };
     const attiva = () => ultimaLettura === lettura;   // una nuova scansione invalida le vecchie
-    let finestraChiusa = false;
 
-    const pOcr = haOcr
-      ? ocrLocale(pagine).then(r => { lettura.ocr = r.parsed; lettura.ocrText = r.testo; if (attiva()) { ocrText = r.testo; aggiornaConfrontoIA(); } return r; })
-      : Promise.reject(new Error('Libreria OCR non caricata'));
-    const pIA = usaIA
-      ? catenaIA(pagine, () => finestraChiusa, t => { if (attiva()) ocrStatus.textContent = t; }).then(r => {
-          lettura.ia = r.lettura; lettura.iaFonte = r.fonte; lettura.iaModello = r.modello || ''; lettura.foto = r.foto;
-          if (r.fonte === 'gemini') lettura.gemini = r.lettura;
-          if (attiva()) aggiornaConfrontoIA();
-          return r;
-        })
-      : Promise.reject(new Error('off'));
-    pOcr.catch(e => { lettura.ocrErrore = e.message; });
-    pIA.catch(e => { lettura.iaErrore = e.message; });
-
-    let parsed = null, fonte = 'ocr', avvisoIA = '', notaIA = '';
-    if (!usaIA && (geminiPronto() || openRouterPronto())) {
-      const pause = [['Gemini', geminiPronto() && pausaGemini()], ['OpenRouter', openRouterPronto() && pausaOpenRouter()]].filter(x => x[1]);
-      avvisoIA = pause.map(([n, p]) => n + ' in pausa fino alle ' + oraBreve(p.fino) + ' (' + p.motivo + ')').join('; ') + ': uso l\'OCR locale.';
-    }
-    if (usaIA) {
-      // L'IA è un di più: se l'OCR locale ha finito e la catena non ha ancora risposto, le si danno
-      // pochi secondi e poi si prosegue (mai minuti di attesa); il servizio successivo non parte più.
-      // Se l'OCR non è disponibile o fallisce non c'è alternativa e si aspetta la catena fino in fondo.
-      const rispostaIA = pIA.then(r => r, e => { avvisoIA = e.message + ': uso l\'OCR locale.'; return null; });
-      const tolleranza = pOcr.then(() => new Promise(res => setTimeout(() => {
-        finestraChiusa = true;
-        avvisoIA = 'L\'IA non ha risposto in tempo: uso l\'OCR locale per non farti aspettare.';
-        res(null);
-      }, ATTESA_IA_DOPO_OCR_MS)), () => new Promise(() => {}));
-      const g = await Promise.race([rispostaIA, tolleranza]);
-      finestraChiusa = true;
-      if (g) {
-        const l = g.lettura;
-        parsed = { data: l.data, negozio: l.negozio, righe: l.righe, errori: [], avvisi: l.avvisi, totale: l.totale, totaleRiportato: l.totaleRiportato, righeDaVerificare: 0 };
-        fonte = g.fonte;
-        notaIA = 'Scontrino letto da ' + NOMI_IA[g.fonte] + (g.modello ? ' (' + g.modello + ')' : '') + '. '
-          + (g.motivi.length ? 'Prima: ' + g.motivi.join('; ') + '. ' : '')
-          + (haOcr ? 'L\'OCR locale gira in parallelo per il confronto.' : '');
-      }
+    // Prima Groq (se attivo): la scansione lo aspetta. L'OCR locale parte solo se Groq non c'è o fallisce.
+    let parsed = null, fonte = 'ocr', notaIA = '';
+    let motivo = motivoGroqNonUsato();
+    if (groqPronto() && !pausaGroq()) {
+      ocrStatus.textContent = 'Lettura con Groq…';
+      ocrProgressFill.style.width = '30%';
+      try {
+        const g = await analizzaConGroq(pagine);
+        if (g.lettura.errori.length) motivo = g.lettura.errori[0].replace(/\.$/, '');
+        else {
+          lettura.ia = g.lettura; lettura.iaFonte = 'groq'; lettura.iaModello = g.modello; lettura.foto = g.foto;
+          const l = g.lettura;
+          parsed = { data: l.data, negozio: l.negozio, righe: l.righe, errori: [], avvisi: l.avvisi, totale: l.totale, totaleRiportato: l.totaleRiportato, righeDaVerificare: 0 };
+          fonte = 'groq';
+          notaIA = 'Scontrino letto da Groq (' + g.modello + ').';
+        }
+      } catch (e) { motivo = e.message; }
     }
     if (!parsed) {
-      let r;
-      try { r = await pOcr; }
-      catch (e) {   // va al catch esterno col motivo, senza perdere quello dei servizi IA
-        throw new Error((avvisoIA ? avvisoIA.replace(/: uso l'OCR locale(?: per non farti aspettare)?\.$/, '') + '. ' : '') + e.message);
+      if (typeof Tesseract === 'undefined') {
+        throw new Error((motivo ? motivo + '. ' : '') + 'OCR locale non caricato (offline?): inserisci i prodotti a mano.');
       }
-      parsed = r.parsed; fonte = 'ocr';
+      const r = await ocrLocale(pagine);
+      lettura.ocr = r.parsed; lettura.ocrText = r.testo;
+      parsed = r.parsed;
       if (attiva()) ocrText = r.testo;
     }
 
@@ -3760,8 +3719,8 @@ async function gestisciFileOCR(file) {
       d.textContent = testo;
       alertBox.prepend(d);
     };
-    if (fonte !== 'ocr') { avvisoInCima('info', notaIA); aggiornaConfrontoIA(); }
-    else if (avvisoIA) avvisoInCima('warning', avvisoIA);
+    if (fonte !== 'ocr') avvisoInCima('info', notaIA);
+    else if (motivo) avvisoInCima('warning', motivo + ': uso l\'OCR locale.');
     // Controllo del totale sempre in cima: è l'ultima difesa contro prezzi letti male.
     // Per l'OCR parsed.totale è il totale stampato: si confronta la somma delle righe (meno sconti).
     const sommaAttesa = sommaAttesaLettura(parsed);
@@ -3781,7 +3740,7 @@ async function gestisciFileOCR(file) {
     } else {
       const conSconto = parsed.righe.filter(r => (r.sconto || 0) > 0).length;
       const daVerificare = parsed.righeDaVerificare || 0;
-      let msg = `${NOMI_IA[fonte] || 'OCR'} completato: ${parsed.righe.length} voci estratte`;
+      let msg = `${fonte === 'groq' ? 'Groq' : 'OCR'} completato: ${parsed.righe.length} voci estratte`;
       if (conSconto) msg += `, ${conSconto} con sconto`;
       if (daVerificare) msg += `, ${daVerificare} da verificare`;
       toast(msg, daVerificare || parsed.avvisi.length ? 'warning' : 'success');
@@ -4927,22 +4886,20 @@ document.getElementById('btn-salva-scontrino').addEventListener('click', () => {
   ocrPreview.classList.remove('active');
 });
 
-/** Salva il caso di prova (OCR locale vs IA (Gemini/OpenRouter) vs correzione finale). Non blocca mai il salvataggio. */
+/** Salva il caso di prova (OCR locale o Groq vs correzione finale). Non blocca mai il salvataggio. */
 function salvaCasoScontrino(righe, totale, negozio, data) {
   const L0 = ultimaLettura;
   if (!L0 || (!L0.ocr && !L0.ia) || !Archivio.ok) return;
   const pulite = rs => rs.map(r => ({ prodotto: r.prodotto, categoria: r.categoria, prezzo: r.prezzo }));
   const caso = {
     id: uid(), creato: new Date().toISOString(), negozio, data,
-    ocrText: L0.ocrText || ocrText || '',
+    ocrText: L0.ocrText || '',
     ocrRighe: L0.ocr ? pulite(L0.ocr.righe) : null, ocrTotale: L0.ocr ? L0.ocr.totale : null,
     ocrTotaleRiportato: L0.ocr ? L0.ocr.totaleRiportato : null,
-    geminiRighe: L0.gemini ? pulite(L0.gemini.righe) : null, geminiTotale: L0.gemini ? L0.gemini.totale : null,
-    usoGemini: !!L0.gemini,
-    iaFonte: L0.iaFonte || null, iaModello: L0.iaModello || '',
+    iaFonte: L0.ia ? 'groq' : null, iaModello: L0.iaModello || '',
     iaRighe: L0.ia ? pulite(L0.ia.righe) : null, iaTotale: L0.ia ? L0.ia.totale : null,
     finaleRighe: pulite(righe), totaleFinale: totale,
-    foto: configIA().salvaFoto ? L0.foto : null
+    foto: configGroq().salvaFoto ? L0.foto : null
   };
   Archivio.salvaCaso(caso).catch(e => console.warn('caso di prova non salvato:', e));
 }
